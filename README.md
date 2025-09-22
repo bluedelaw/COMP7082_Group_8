@@ -41,7 +41,7 @@ pip install -r requirements.txt
 ### 2️⃣ Run the AI Assistant
 
 ```sh
-python serve.py
+python server.py
 ```
 
 ---
