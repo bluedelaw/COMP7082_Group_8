@@ -4,7 +4,7 @@ fastapi==0.103.2
 uvicorn==0.22.0
 
 # Whisper + deps
-torch==2.0.1
+torch==2.8.
 openai-whisper==20230918
 numpy==1.26.2
 
@@ -13,3 +13,7 @@ pyaudio==0.2.13
 
 # For uploads (the /transcribe endpoint)
 python-multipart==0.0.9
+
+# For frontend
+gradio
+
