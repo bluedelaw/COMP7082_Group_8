@@ -18,11 +18,23 @@ from backend.ai_engine import generate_reply, JarvinConfig
 log = logging.getLogger("jarvin")
 
 
-async def run_listener(stop_event: asyncio.Event) -> None:
+async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) -> None:
     """
     Background loop: record every N seconds, transcribe, generate reply.
     Terminates when stop_event is set.
+
+    initial_delay: small delay to allow uvicorn to print "Application startup complete"
+                   before the first recording/transcription logs.
     """
+    # Optional initial delay to ensure startup logs from uvicorn appear first
+    # Value is wired from config in backend/main.py
+    if initial_delay > 0:
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=initial_delay)
+            return  # stop requested during initial delay
+        except asyncio.TimeoutError:
+            pass
+
     model, device, model_size = load_whisper_model()
     log.info(f"🧠 Whisper ready | size={model_size}, device={device}")
 
@@ -53,12 +65,15 @@ async def run_listener(stop_event: asyncio.Event) -> None:
                 t0 = time.perf_counter()
                 log.info("🧠  [transcribe] running Whisper…")
                 text = transcribe_audio(wav, model=model, device=device).strip()
-                t1 = time.perf_counter()
-                transcribe_ms = int((t1 - t0) * 1000)
+                transcribe_ms = int((time.perf_counter() - t0) * 1000)
 
                 if not text:
                     log.info("📝  [result] (empty) in %d ms", transcribe_ms)
-                    await asyncio.wait_for(stop_event.wait(), timeout=0.2)
+                    # Normal idle wait: time out frequently; not an error.
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=0.2)
+                    except asyncio.TimeoutError:
+                        pass
                     continue
 
                 log.info("📝  [result] “%s” (%d ms)", text, transcribe_ms)
@@ -72,15 +87,18 @@ async def run_listener(stop_event: asyncio.Event) -> None:
                 log.info("⏱️  [cycle] done in %d ms\n", cycle_ms)
 
             except asyncio.CancelledError:
-                raise
+                # Silent, expected during shutdown
+                return
             except Exception as e:
+                # Log and continue loop
                 log.exception("Listener iteration failed: %s", e)
 
-            # Small cooperative pause
+            # Small cooperative pause: wake early if stop_event is set; ignore normal timeouts.
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=0.2)
             except asyncio.TimeoutError:
                 pass
 
     except asyncio.CancelledError:
-        pass  # Graceful cancellation
+        # Graceful cancellation
+        return

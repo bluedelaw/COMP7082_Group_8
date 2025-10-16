@@ -13,19 +13,16 @@ from fastapi.middleware.cors import CORSMiddleware
 # Ensure package imports in dev
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+from backend.logging_setup import init_logging
 import config as cfg
 from backend.listener import run_listener
 from audio.speech_recognition import transcribe_audio
 
 # ----------------------------------------------------------------------------- #
-# Logging
+# Centralized logging initialization (uses level from config.py)
 # ----------------------------------------------------------------------------- #
+init_logging(cfg.LOG_LEVEL)
 log = logging.getLogger("jarvin")
-if not log.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
-    log.addHandler(handler)
-log.setLevel(logging.INFO)
 
 # ----------------------------------------------------------------------------- #
 # Lifespan: starts the listener loop on boot, stops it on shutdown
@@ -33,7 +30,10 @@ log.setLevel(logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.stop_event = asyncio.Event()
-    app.state.listener_task = asyncio.create_task(run_listener(app.state.stop_event))
+    # Start listener with a tiny initial delay so uvicorn's "startup complete" appears first
+    app.state.listener_task = asyncio.create_task(
+        run_listener(app.state.stop_event, initial_delay=cfg.INITIAL_LISTENER_DELAY)
+    )
     log.info("🎧 Listener task started automatically on server boot.")
     try:
         yield
@@ -87,7 +87,9 @@ async def start_listener():
     if app.state.listener_task is not None and not app.state.listener_task.done():
         return {"ok": True, "message": "Listener already running."}
     app.state.stop_event.clear()
-    app.state.listener_task = asyncio.create_task(run_listener(app.state.stop_event))
+    app.state.listener_task = asyncio.create_task(
+        run_listener(app.state.stop_event, initial_delay=0.0)
+    )
     return {"ok": True, "message": "Listener started."}
 
 @app.post("/stop")

@@ -23,3 +23,12 @@ LOG_LEVEL: str = "info"
 
 # When not persisting, delete the raw WAV after amplifying (saves I/O)
 DELETE_RAW_AFTER_AMPLIFY: bool = True
+
+# Listener / startup behavior
+# Small delay so uvicorn prints "Application startup complete" before the first capture/transcribe logs.
+INITIAL_LISTENER_DELAY: float = 0.2
+
+# Uvicorn reload behavior
+# Windows reload is noisy on shutdown; default to False on Windows and True elsewhere by mirroring these flags in server.py.
+UVICORN_RELOAD_WINDOWS: bool = False
+UVICORN_RELOAD_OTHERS: bool = True
