@@ -61,7 +61,11 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                     device_index=device_index,
                 )
 
-                # PHASE 2: TRANSCRIBING
+                # Early-exit if shutdown requested between record and transcribe
+                if stop_event.is_set():
+                    return
+
+                # PHASE 2: TRANSCRIBING (now no ffmpeg)
                 t0 = time.perf_counter()
                 log.info("🧠  [transcribe] running Whisper…")
                 text = transcribe_audio(wav, model=model, device=device).strip()
@@ -87,10 +91,12 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                 log.info("⏱️  [cycle] done in %d ms\n", cycle_ms)
 
             except asyncio.CancelledError:
-                # Silent, expected during shutdown
                 return
             except Exception as e:
-                # Log and continue loop
+                if stop_event.is_set():
+                    # Suppress noisy logs that happen during shutdown races
+                    log.debug("Listener suppressed error during shutdown: %s", e)
+                    return
                 log.exception("Listener iteration failed: %s", e)
 
             # Small cooperative pause: wake early if stop_event is set; ignore normal timeouts.

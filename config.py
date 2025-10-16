@@ -25,10 +25,31 @@ LOG_LEVEL: str = "info"
 DELETE_RAW_AFTER_AMPLIFY: bool = True
 
 # Listener / startup behavior
-# Small delay so uvicorn prints "Application startup complete" before the first capture/transcribe logs.
 INITIAL_LISTENER_DELAY: float = 0.2
 
 # Uvicorn reload behavior
-# Windows reload is noisy on shutdown; default to False on Windows and True elsewhere by mirroring these flags in server.py.
 UVICORN_RELOAD_WINDOWS: bool = False
 UVICORN_RELOAD_OTHERS: bool = True
+
+# ---------------------------------------------------------------------------
+# Local LLM bootstrap
+# ---------------------------------------------------------------------------
+MODELS_DIR: str = "models"
+LLM_AUTO_PROVISION: bool = True
+LLM_BACKEND: str = "llama_cpp"
+
+# Force a single logical model for now
+LLM_FORCE_LOGICAL_NAME: str = "phi-3-mini-4k-instruct"
+
+# Preference order when not forced
+LLM_MODEL_PREFERENCE: list[str] = [
+    "mistral-7b-instruct",
+    "phi-3-mini-4k-instruct",
+    "neural-chat-7b",
+]
+
+# Download/layout behavior
+# If True, ensure we end up with models/<filename>.gguf (flat), independent of vendor cache layout
+LLM_FLAT_LAYOUT: bool = True
+# If True (and flat layout), delete vendor download dirs created in MODELS_DIR after copying the file
+LLM_CLEAN_VENDOR_DIRS: bool = True

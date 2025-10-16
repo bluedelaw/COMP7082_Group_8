@@ -17,6 +17,7 @@ from backend.logging_setup import init_logging
 import config as cfg
 from backend.listener import run_listener
 from audio.speech_recognition import transcribe_audio
+from backend.llm_bootstrap import provision_llm
 
 # ----------------------------------------------------------------------------- #
 # Centralized logging initialization (uses level from config.py)
@@ -25,25 +26,35 @@ init_logging(cfg.LOG_LEVEL)
 log = logging.getLogger("jarvin")
 
 # ----------------------------------------------------------------------------- #
-# Lifespan: starts the listener loop on boot, stops it on shutdown
+# Lifespan: starts background tasks on boot, stops them on shutdown
 # ----------------------------------------------------------------------------- #
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.stop_event = asyncio.Event()
-    # Start listener with a tiny initial delay so uvicorn's "startup complete" appears first
+
+    # Provision LLM (hardware detect + ensure model). provision_llm() logs success/failure itself.
+    if cfg.LLM_AUTO_PROVISION:
+        try:
+            await provision_llm()
+        except Exception as e:
+            log.exception("LLM provisioning failed: %s", e)
+
+    # Start listener with a tiny initial delay so Uvicorn's "startup complete" appears first
     app.state.listener_task = asyncio.create_task(
         run_listener(app.state.stop_event, initial_delay=cfg.INITIAL_LISTENER_DELAY)
     )
     log.info("🎧 Listener task started automatically on server boot.")
+
     try:
         yield
-    except asyncio.CancelledError:
-        log.debug("Lifespan cancelled (normal during shutdown).")
-        raise
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        log.debug("Lifespan cancellation received during shutdown; suppressing exception.")
+    except Exception as e:
+        log.exception("Unhandled exception in lifespan: %s", e)
     finally:
         log.info("🛑 Shutting down listener…")
         app.state.stop_event.set()
-        task = app.state.listener_task
+        task = getattr(app.state, "listener_task", None)
         if task:
             with suppress(asyncio.CancelledError):
                 await task
