@@ -17,5 +17,8 @@ python-multipart==0.0.9
 # For frontend
 gradio==4.44.1
 
-# For model provisioning from Hugging Face Hub
+# For model provisioning from Hugging Face Hub (used only if LLM_BACKEND="llama_cpp")
 huggingface-hub==0.25.2
+
+# HTTP client for Ollama backend
+requests==2.*

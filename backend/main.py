@@ -32,8 +32,8 @@ log = logging.getLogger("jarvin")
 async def lifespan(app: FastAPI):
     app.state.stop_event = asyncio.Event()
 
-    # Provision LLM (hardware detect + ensure model). provision_llm() logs success/failure itself.
-    if cfg.LLM_AUTO_PROVISION:
+    # Only provision GGUF if we're using the llama_cpp backend.
+    if cfg.LLM_BACKEND.lower() == "llama_cpp" and cfg.LLM_AUTO_PROVISION:
         try:
             await provision_llm()
         except Exception as e:

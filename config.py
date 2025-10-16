@@ -32,24 +32,38 @@ UVICORN_RELOAD_WINDOWS: bool = False
 UVICORN_RELOAD_OTHERS: bool = True
 
 # ---------------------------------------------------------------------------
-# Local LLM bootstrap
+# Local LLM bootstrap / backend selection
 # ---------------------------------------------------------------------------
 MODELS_DIR: str = "models"
-LLM_AUTO_PROVISION: bool = True
-LLM_BACKEND: str = "llama_cpp"
 
-# Force a single logical model for now
+# Choose backend: "ollama" (recommended on Windows CPU) or "llama_cpp"
+LLM_BACKEND: str = "ollama"
+
+# If you switch back to llama_cpp, you can auto-provision GGUFs from HF Hub:
+LLM_AUTO_PROVISION: bool = True
+
+# Logical model choice used by llama_cpp path; for Ollama we use OLLAMA_MODEL below
 LLM_FORCE_LOGICAL_NAME: str = "phi-3-mini-4k-instruct"
 
-# Preference order when not forced
+# Preference order when not forced (llama_cpp path)
 LLM_MODEL_PREFERENCE: list[str] = [
     "mistral-7b-instruct",
     "phi-3-mini-4k-instruct",
     "neural-chat-7b",
 ]
 
-# Download/layout behavior
-# If True, ensure we end up with models/<filename>.gguf (flat), independent of vendor cache layout
+# Download/layout behavior for llama_cpp path
 LLM_FLAT_LAYOUT: bool = True
-# If True (and flat layout), delete vendor download dirs created in MODELS_DIR after copying the file
 LLM_CLEAN_VENDOR_DIRS: bool = True
+
+# ---------------------------------------------------------------------------
+# Ollama settings
+# ---------------------------------------------------------------------------
+# Base URL where ollama serve is running
+OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+# Model tag to use with Ollama (must be pulled with `ollama pull ...`)
+# Good small CPU choice:
+OLLAMA_MODEL: str = "phi3:mini"
+# Optional response settings
+OLLAMA_TEMPERATURE: float = 0.7
+OLLAMA_NUM_PREDICT: int = 256
