@@ -5,44 +5,37 @@ import logging
 from functools import lru_cache
 from typing import List, Dict, Optional, TYPE_CHECKING
 
-import requests
-
 import config as cfg
 from backend.llm_model_manager import pick_model, ensure_download, GGUFModelSpec
 
 if TYPE_CHECKING:
-    # Only for type checking; not required at runtime unless llama_cpp backend is selected
+    # Available to the type checker; not imported at runtime if package missing
     from llama_cpp import Llama  # type: ignore
 
 log = logging.getLogger("jarvin.llmrt")
 
 
-# ---------------------------
-# llama.cpp (in-process) path
-# ---------------------------
 def _infer_chat_format(filename: str) -> Optional[str]:
     fname = filename.lower()
+    # Phi-3 Instruct uses ChatML; llama-cpp ships a "chatml" handler
     if "phi-3" in fname or "phi3" in fname:
-        return "phi3"
+        return "chatml"
     if "mistral" in fname:
         return "mistral-instruct"
     if "neural-chat" in fname:
         return "llama-2"
     return None
 
-
 @lru_cache(maxsize=1)
 def _load_llama() -> Optional["Llama"]:
     """
-    Singleton loader for llama-cpp-python. Returns None if unavailable or not selected.
+    Singleton loader for the local LLM (llama-cpp-python).
+    Ensures the GGUF exists and loads it with a sensible context size.
     """
-    if cfg.LLM_BACKEND.lower() != "llama_cpp":
-        return None
-
     try:
         from llama_cpp import Llama  # type: ignore
     except Exception:
-        log.warning("llama-cpp-python is not installed; local LLM (llama_cpp) disabled.")
+        log.warning("llama-cpp-python is not installed; local LLM disabled.")
         return None
 
     try:
@@ -54,8 +47,8 @@ def _load_llama() -> Optional["Llama"]:
         llm = Llama(
             model_path=model_path,
             n_ctx=4096,
-            n_threads=None,     # auto-detect
-            n_gpu_layers=0,     # CPU-only on Windows laptop
+            n_threads=None,     # let library pick a good default
+            n_gpu_layers=0,     # CPU-only (Windows laptop without CUDA)
             chat_format=chat_format,
             verbose=False,
         )
@@ -65,7 +58,15 @@ def _load_llama() -> Optional["Llama"]:
         return None
 
 
-def _chat_llama_cpp(system_prompt: str, user_text: str, temperature: float, max_tokens: int) -> Optional[str]:
+def chat_completion(
+    system_prompt: str,
+    user_text: str,
+    temperature: float = 0.7,
+    max_tokens: int = 256,
+) -> Optional[str]:
+    """
+    Simple chat wrapper around llama.cpp. Returns the model's text or None on failure.
+    """
     llm = _load_llama()
     if llm is None:
         return None
@@ -74,6 +75,7 @@ def _chat_llama_cpp(system_prompt: str, user_text: str, temperature: float, max_
         {"role": "system", "content": system_prompt.strip()},
         {"role": "user", "content": user_text.strip()},
     ]
+
     try:
         out = llm.create_chat_completion(
             messages=messages,
@@ -83,61 +85,5 @@ def _chat_llama_cpp(system_prompt: str, user_text: str, temperature: float, max_
         )
         return out["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        log.exception("LLM chat completion (llama_cpp) failed: %s", e)
-        return None
-
-
-# ---------------
-# Ollama HTTP path
-# ---------------
-def _chat_ollama(system_prompt: str, user_text: str, temperature: float, max_tokens: int) -> Optional[str]:
-    """
-    Minimal Ollama /api/chat client.
-    """
-    url = f"{cfg.OLLAMA_BASE_URL.rstrip('/')}/api/chat"
-    model = cfg.OLLAMA_MODEL
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt.strip()},
-            {"role": "user", "content": user_text.strip()},
-        ],
-        "options": {
-            "temperature": float(temperature),
-            "num_predict": int(max_tokens),
-        },
-        "stream": False,
-    }
-    try:
-        r = requests.post(url, json=payload, timeout=120)
-        r.raise_for_status()
-        data = r.json()
-        # Ollama returns { "message": {"role": "...", "content": "..."} , ... }
-        msg = data.get("message", {})
-        content = (msg.get("content") or "").strip()
-        return content or None
-    except Exception as e:
-        log.exception("LLM chat completion (ollama) failed: %s", e)
-        return None
-
-
-# ---------------------
-# Unified chat function
-# ---------------------
-def chat_completion(
-    system_prompt: str,
-    user_text: str,
-    temperature: float = 0.7,
-    max_tokens: int = 256,
-) -> Optional[str]:
-    backend = cfg.LLM_BACKEND.lower().strip()
-    if backend == "ollama":
-        # Use Ollama-specific defaults if caller passes none
-        temperature = temperature if temperature is not None else cfg.OLLAMA_TEMPERATURE
-        max_tokens = max_tokens if max_tokens is not None else cfg.OLLAMA_NUM_PREDICT
-        return _chat_ollama(system_prompt, user_text, temperature, max_tokens)
-    elif backend == "llama_cpp":
-        return _chat_llama_cpp(system_prompt, user_text, temperature, max_tokens)
-    else:
-        log.error("Unknown LLM_BACKEND=%s", cfg.LLM_BACKEND)
+        log.exception("LLM chat completion failed: %s", e)
         return None

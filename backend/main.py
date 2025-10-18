@@ -32,14 +32,14 @@ log = logging.getLogger("jarvin")
 async def lifespan(app: FastAPI):
     app.state.stop_event = asyncio.Event()
 
-    # Only provision GGUF if we're using the llama_cpp backend.
-    if cfg.LLM_BACKEND.lower() == "llama_cpp" and cfg.LLM_AUTO_PROVISION:
+    # Provision GGUF if enabled (llama.cpp path)
+    if cfg.LLM_AUTO_PROVISION:
         try:
             await provision_llm()
         except Exception as e:
             log.exception("LLM provisioning failed: %s", e)
 
-    # Start listener with a tiny initial delay so Uvicorn's "startup complete" appears first
+    # Start listener with small initial delay
     app.state.listener_task = asyncio.create_task(
         run_listener(app.state.stop_event, initial_delay=cfg.INITIAL_LISTENER_DELAY)
     )
