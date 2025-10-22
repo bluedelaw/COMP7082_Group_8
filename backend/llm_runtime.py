@@ -47,11 +47,12 @@ def _load_llama() -> Optional["Llama"]:
         llm = Llama(
             model_path=model_path,
             n_ctx=4096,
-            n_threads=None,     # let library pick a good default
+            n_threads=os.cpu_count() or 4,  # let library pick a good default
             n_gpu_layers=0,     # CPU-only (Windows laptop without CUDA)
             chat_format=chat_format,
             verbose=False,
         )
+        log.info("✅ Local LLM loaded successfully. Using %d threads.", llm.n_threads)
         return llm
     except Exception as e:
         log.exception("Failed to load local LLM: %s", e)
