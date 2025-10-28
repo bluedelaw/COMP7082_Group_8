@@ -76,3 +76,11 @@ def detect_hardware() -> HardwareProfile:
         vram_gb=vram,
         has_mps=has_mps,
     )
+
+
+def check_gpu_support():
+    print("CUDA available:", torch.cuda.is_available())
+    if torch.cuda.is_available():
+        print("Using device:", torch.cuda.get_device_name(0))
+    else:
+        print("Running on CPU")
