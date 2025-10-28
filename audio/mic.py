@@ -12,9 +12,15 @@ os.environ["ALSA_LOGLEVEL"] = "0"
 
 
 import numpy as np
-import pyaudio
+try:
+    import pyaudio
+except ImportError:
+    pyaudio = None
+
 import torch
 import whisper
+import threading
+from contextlib import contextmanager, suppress
 
 import sys
 import contextlib
@@ -24,6 +30,7 @@ import config as cfg
 # Module-level cache so we don't announce/select the device every chunk
 _CACHED_DEVICE_INDEX: Optional[int] = None
 _CACHED_DEVICE_NAME: Optional[str] = None
+
 
 @contextlib.contextmanager
 def suppress_alsa_warnings():
@@ -98,96 +105,78 @@ def list_input_devices() -> list[tuple[int, str]]:
             p.terminate()
     return devices
 
+def print_input_devices():
+    devices = list_input_devices()
+    if not devices:
+        print("❌ No input devices found.", flush=True)
+    else:
+        print("🎤 Input-capable devices:", flush=True)
+        for idx, name in devices:
+            print(f"  [{idx}] {name}", flush=True)
 
 
-def get_default_input_device_index() -> int:
-    """
-    Automatically pick the first usable input device on Linux (or fallback on any OS).
-    Ignores virtual or output-only devices.
-    Caches the result to avoid repeated ALSA queries.
-    """
-    with suppress_alsa_warnings(): 
-        p = pyaudio.PyAudio()
-        global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
-        if _CACHED_DEVICE_INDEX is not None:
-            return _CACHED_DEVICE_INDEX
+def get_default_input_device_index():
+    global pyaudio
+    print("🔍 Checking PyAudio import:", pyaudio)
+    if pyaudio is None:
+        print("❌ PyAudio not available. Please install it with: pip install pyaudio")
+        raise RuntimeError("PyAudio not available")
 
-        import pyaudio
-
-        p = pyaudio.PyAudio()
-        devices = []
-        try:
-            for i in range(p.get_device_count()):
-                info = p.get_device_info_by_index(i)
-                if info.get("maxInputChannels", 0) > 0:
-                    # Skip known virtual/output devices
-                    name = info.get("name", "").lower()
-                    if any(skip in name for skip in ("hdmi", "pulse", "jack", "dmix", "output")):
-                        continue
-                    devices.append((i, info["name"], int(info.get("defaultSampleRate", 48000))))
-        finally:
-            p.terminate()
-
-        if not devices:
-            raise RuntimeError("No usable input devices found. Check mic permissions.")
-
-        idx, name, rate = devices[0]
-        _CACHED_DEVICE_INDEX = idx
-        _CACHED_DEVICE_NAME = name
-        print(f"🎤 Using input device [{idx}] {name} | default rate={rate} Hz")
-    return idx
-
-
-
-def record_wav(filename="output.wav", record_seconds=5, device_index=None, rate=48000):
-    """
-    Records audio to a WAV file, suppressing ALSA warnings.
-    
-    Args:
-        filename (str): Name of output WAV file.
-        record_seconds (int): Recording duration in seconds.
-        device_index (int or None): PyAudio input device index.
-        rate (int): Sampling rate (Hz).
-    """
     p = pyaudio.PyAudio()
+    count = p.get_device_count()
+    print(f"🎤 Found {count} audio devices")
+
+    if count == 0:
+        raise RuntimeError("❌ No input audio devices found.")
+
+    info = p.get_default_input_device_info()
+    print("✅ Default input device:", info)
+    return info.get("index")
+
+
+
+
+def record_wav(filename="output.wav", record_seconds=5, device_index=None):
+    import pyaudio, wave, time
+
     frames = []
-    chunk_size = 1024
-    channels = 1  # usually 1 for microphone
+    rate = 44100
+    frames_per_buffer = 1024
 
-    with suppress_alsa_warnings():
+    p = pyaudio.PyAudio()
+    if device_index is None:
+        device_index = p.get_default_input_device_info()['index']
+
+    stream = p.open(format=pyaudio.paInt16,
+                    channels=1,
+                    rate=rate,
+                    input=True,
+                    input_device_index=device_index,
+                    frames_per_buffer=frames_per_buffer)
+    
+    print(f"🎙️ Recording for {record_seconds}s…", flush=True)
+    start_time = time.time()
+    
+    while time.time() - start_time < record_seconds:
         try:
-            stream = p.open(
-                format=pyaudio.paInt16,
-                channels=channels,
-                rate=rate,
-                input=True,
-                frames_per_buffer=chunk_size,
-                input_device_index=device_index
-            )
-        except Exception as e:
-            print(f"Failed to open audio device: {e}")
-            p.terminate()
-            return
-
-        print(f"Recording for {record_seconds} seconds…")
-        for _ in range(0, int(rate / chunk_size * record_seconds)):
-            data = stream.read(chunk_size, exception_on_overflow=False)
+            data = stream.read(frames_per_buffer, exception_on_overflow=False)
             frames.append(data)
+        except Exception as e:
+            print(f"❌ Error capturing audio: {e}", flush=True)
+    
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
 
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-    # Save to WAV
     with wave.open(filename, 'wb') as wf:
-        wf.setnchannels(channels)
+        wf.setnchannels(1)
         wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
         wf.setframerate(rate)
         wf.writeframes(b''.join(frames))
 
-    print(f"Recording saved as {filename}")
+    print(f"✅ Recording saved as {filename}", flush=True)
 
-    
+  
     
 
 
@@ -253,3 +242,8 @@ def record_and_prepare_chunk(
             except OSError:
                 pass
         return amp
+
+
+# Now you can safely call it
+if __name__ == "__main__":
+    print_input_devices()

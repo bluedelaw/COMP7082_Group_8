@@ -12,6 +12,10 @@ import uvicorn
 import config as cfg
 from backend.logging_setup import init_logging
 
+# server.py
+from audio.mic import print_input_devices
+
+
 if __name__ == "__main__":
     # Initialize centralized logging before starting the server (level from config.py)
     init_logging(cfg.LOG_LEVEL)

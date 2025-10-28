@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import List, Dict, Optional, TYPE_CHECKING
 
 import config as cfg
+import os
 from backend.llm_model_manager import pick_model, ensure_download, GGUFModelSpec
 
 if TYPE_CHECKING:
@@ -47,7 +48,7 @@ def _load_llama() -> Optional["Llama"]:
         llm = Llama(
             model_path=model_path,
             n_ctx=4096,
-            n_threads=os.cpu_count() - 1 or 4,  # let library pick a good default
+            n_threads=os.cpu_count() or 4,  # let library pick a good default
             n_gpu_layers=0,     # CPU-only (Windows laptop without CUDA)
             chat_format=chat_format,
             verbose=False,
