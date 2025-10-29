@@ -35,7 +35,7 @@ UVICORN_RELOAD_OTHERS: bool = True
 # Local LLM (llama.cpp) settings
 # ---------------------------------------------------------------------------
 MODELS_DIR: str = "models"
-LLM_BACKEND: str = "llama_cpp"   # <— back to llama.cpp
+LLM_BACKEND: str = "llama_cpp"
 
 # Auto-download GGUF model on startup
 LLM_AUTO_PROVISION: bool = True
@@ -53,3 +53,52 @@ LLM_MODEL_PREFERENCE: list[str] = [
 # Download/layout behavior
 LLM_FLAT_LAYOUT: bool = True
 LLM_CLEAN_VENDOR_DIRS: bool = True
+
+# -------- Voice Activity / Noise Gate (frames are ~20–64 ms depending on CHUNK) --------
+# Initial background calibration duration
+VAD_CALIBRATION_SEC: float = 1.5
+
+# Trigger threshold relative to the (smoothed) noise floor
+# Effective threshold = max(VAD_THRESHOLD_ABS, noise_floor_rms * VAD_THRESHOLD_MULT)
+VAD_THRESHOLD_MULT: float = 3.0
+VAD_THRESHOLD_ABS: float = 200.0   # absolute RMS guardrail (int16 scale)
+
+# Debounce timing (ms)
+VAD_ATTACK_MS: int = 120           # how long above threshold to start
+VAD_RELEASE_MS: int = 350          # how long below threshold to consider ended
+VAD_HANGOVER_MS: int = 200         # grace after dips below threshold during speech
+
+# Recording guards
+VAD_PRE_ROLL_MS: int = 300         # audio to prepend before trigger
+VAD_MIN_UTTERANCE_MS: int = 250    # discard ultra-short bursts
+VAD_MAX_UTTERANCE_SEC: float = 30  # safety cutoff
+
+# Optional level conditioning
+NORMALIZE_TO_DBFS: float | None = -3.0  # None to disable; otherwise peak normalize to this dBFS
+
+# -------- VAD logging --------
+# Heartbeat while idle (ms). 0 disables.
+VAD_HEARTBEAT_MS: int = 1000
+
+# Log an utterance START/END banner and a one-line summary per utterance.
+VAD_LOG_TRANSITIONS: bool = True
+
+# Optional detailed stats (DEBUG level) every N frames; 0 disables.
+VAD_LOG_STATS_EVERY_N_FRAMES: int = 0  # e.g., 10 to log ~every ~640ms with CHUNK=1024@16k
+
+# Cap how often threshold changes are logged during idle (ms)
+VAD_LOG_THRESHOLD_CHANGES_MS: int = 3000
+
+# TTY live status (single updating line while idle)
+VAD_TTY_STATUS: bool = True  # set False to disable in-place status updates
+
+# -------- VAD behavior toggles --------
+# Use instantaneous RMS for trigger decisions (more responsive) vs smoothed envelope
+VAD_USE_INSTANT_RMS_FOR_TRIGGER: bool = True
+
+# Clamp noise floor during calibration and adaptation (int16 RMS units)
+VAD_FLOOR_MIN: float = 20.0
+VAD_FLOOR_MAX: float = 4000.0
+
+# Require a margin below threshold before adapting floor (prevents chasing near-speech)
+VAD_FLOOR_ADAPT_MARGIN: float = 0.90
