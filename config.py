@@ -102,3 +102,8 @@ VAD_FLOOR_MAX: float = 4000.0
 
 # Require a margin below threshold before adapting floor (prevents chasing near-speech)
 VAD_FLOOR_ADAPT_MARGIN: float = 0.90
+
+# -------- Voice shutdown behavior --------
+# If False (default), a single shutdown hotword immediately exits.
+# If True, require a second voice confirmation.
+VOICE_SHUTDOWN_CONFIRM: bool = False

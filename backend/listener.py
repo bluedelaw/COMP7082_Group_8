@@ -16,35 +16,31 @@ from backend.ai_engine import generate_reply, JarvinConfig
 
 log = logging.getLogger("jarvin")
 
-# --- Voice shutdown intent handling ------------------------------------------
-# Deterministic keywords (fast, reliable)
+# --- Voice shutdown intent handling (deterministic) ---------------------------
 _SHUTDOWN_HOTWORDS = re.compile(
     r"\b("
     r"shut\s*down|shutdown|power\s*off|turn\s*off|stop\s+listening|stop\s+the\s+server|stop\s+server|"
-    r"exit|quit|terminate|kill\s+(?:it|process|server)|end\s+(?:session|process|server)"
+    r"exit|quit|terminate|end\s+(?:session|process|server)|kill\s+(?:it|process|server)"
     r")\b",
     re.IGNORECASE,
 )
-# Explicit confirm words
+_NEGATIONS = re.compile(r"\b(don't|do\s+not|not\s+now|cancel|false\s+alarm)\b", re.IGNORECASE)
+
+# Optional confirmation hotwords (only used if VOICE_SHUTDOWN_CONFIRM=True)
 _CONFIRM_HOTWORDS = re.compile(
     r"\b(confirm(?:ed)?\s+(?:shut\s*down|shutdown|exit|quit)|yes[, ]*(?:shut\s*down|exit)|go\s+ahead)\b",
     re.IGNORECASE,
 )
-# Common negations to avoid accidental exits
-_NEGATIONS = re.compile(r"\b(don't|do\s+not|not\s+now|cancel|false\s+alarm)\b", re.IGNORECASE)
-
-_CONFIRM_WINDOW_SEC = 15.0  # time allowed to say the confirmation phrase
+_CONFIRM_WINDOW_SEC = 15.0
 
 
 def _intent_shutdown(text: str) -> bool:
-    """Return True if the text strongly looks like a shutdown request."""
     if _NEGATIONS.search(text):
         return False
     return bool(_SHUTDOWN_HOTWORDS.search(text))
 
 
 def _intent_confirm(text: str) -> bool:
-    """Return True if the text clearly confirms shutdown."""
     if _NEGATIONS.search(text):
         return False
     return bool(_CONFIRM_HOTWORDS.search(text))
@@ -67,26 +63,21 @@ async def _watch_stop_event(stop_event: asyncio.Event, vad: NoiseGateVAD) -> Non
 async def _hard_exit_after_cleanup(stop_event: asyncio.Event, delay_sec: float = 0.15) -> None:
     """
     On Windows with Uvicorn, Ctrl+C may not propagate while PyAudio is active.
-    We therefore do a deliberate, clean-ish shutdown:
-      - signal listener stop
-      - small async delay to let tasks unwind
-      - hard-exit process (os._exit) to ensure Uvicorn terminates
+    Do a deliberate, clean-ish shutdown then hard-exit.
     """
     try:
         stop_event.set()
         await asyncio.sleep(delay_sec)
     finally:
-        os._exit(0)  # hard exit avoids uvicorn event-loop quirks on Windows
+        os._exit(0)  # ensures immediate termination
 
 
 async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) -> None:
     """
-    Stream listener:
-      - calibrates noise floor
-      - yields utterances on dynamic changes
+    Stream listener with noise-gated VAD:
+      - calibrates noise floor and captures utterances
       - transcribes & replies
-      - supports voice-initiated shutdown with explicit confirmation
-      - immediate shutdown path for Windows via os._exit(0)
+      - voice-initiated shutdown (single-shot by default; configurable)
     """
     if initial_delay > 0:
         try:
@@ -107,7 +98,7 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
 
     cfg_ai = JarvinConfig()
 
-    # Shutdown confirmation state
+    # If confirmation mode is enabled, track its window
     pending_shutdown_deadline: Optional[float] = None
 
     vad = NoiseGateVAD(sample_rate=cfg.SAMPLE_RATE, chunk=cfg.CHUNK, device_index=device_index)
@@ -127,11 +118,10 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
         while not stop_event.is_set():
             cycle_start = time.perf_counter()
 
-            # Block until an utterance is yielded (PyAudio.read is unblocked by stopper_task)
+            # Wait for next utterance
             try:
                 pcm, sr = next(utter_gen)
             except StopIteration:
-                # Stop requested; exit cleanly
                 return
             except Exception as e:
                 if stop_event.is_set():
@@ -140,7 +130,7 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                 await asyncio.sleep(0.05)
                 continue
 
-            # Persist utterance to a temp wav (with optional normalization)
+            # Save utterance
             wav_path = _temp_wav_path("live_utt")
             NoiseGateVAD.write_wav(wav_path, pcm, sr, normalize_dbfs=cfg.NORMALIZE_TO_DBFS)
             log.info("💾 saved utterance → %s", wav_path)
@@ -160,49 +150,48 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
 
             log.info("📝  [result] “%s” (%d ms)", text, t_ms)
 
-            # ------------ Voice shutdown flow ------------
-            now = time.monotonic()
-
-            # Expire any stale pending confirmation window
-            if pending_shutdown_deadline is not None and now > pending_shutdown_deadline:
-                pending_shutdown_deadline = None
-
-            if pending_shutdown_deadline is None:
-                # First stage: detect shutdown intent
+            # ---------------- Voice shutdown logic ----------------
+            if not cfg.VOICE_SHUTDOWN_CONFIRM:
+                # Single-shot: immediate exit on hotword
                 if _intent_shutdown(text):
-                    pending_shutdown_deadline = now + _CONFIRM_WINDOW_SEC
-                    log.info(
-                        "⚠️  Shutdown intent detected. Waiting up to %.0fs for confirmation "
-                        "(say: 'confirm shutdown' or 'yes, shut down').",
-                        _CONFIRM_WINDOW_SEC,
-                    )
-                    # Optional: produce a short confirmation prompt (no LLM round-trip)
-                    log.info("📣  [reply] To confirm shutdown, say: 'confirm shutdown'.")
-                    # Small cooperative pause so the hint isn't immediately swallowed by next capture
-                    try:
-                        await asyncio.wait_for(stop_event.wait(), timeout=0.05)
-                    except asyncio.TimeoutError:
-                        pass
-                    continue
-            else:
-                # Second stage: require explicit confirmation
-                if _intent_confirm(text):
-                    log.info("🛑 Voice confirmation received. Shutting down now…")
+                    log.info("🛑 Voice shutdown requested. Exiting immediately…")
                     await _hard_exit_after_cleanup(stop_event)
                     return  # not reached
-                else:
-                    # If user spoke something else within the window but not confirm, keep listening
-                    pass
+            else:
+                # Two-step confirmation mode
+                now = time.monotonic()
+                if pending_shutdown_deadline and now > pending_shutdown_deadline:
+                    pending_shutdown_deadline = None
 
-            # ------------ Normal assistant reply ------------
+                if pending_shutdown_deadline is None:
+                    if _intent_shutdown(text):
+                        pending_shutdown_deadline = now + _CONFIRM_WINDOW_SEC
+                        log.info(
+                            "⚠️  Shutdown intent detected. Waiting up to %.0fs for confirmation "
+                            "(say: 'confirm shutdown' or 'yes, shut down').",
+                            _CONFIRM_WINDOW_SEC,
+                        )
+                        log.info("📣  [reply] To confirm shutdown, say: 'confirm shutdown'.")
+                        try:
+                            await asyncio.wait_for(stop_event.wait(), timeout=0.05)
+                        except asyncio.TimeoutError:
+                            pass
+                        continue
+                else:
+                    if _intent_confirm(text):
+                        log.info("🛑 Voice confirmation received. Shutting down now…")
+                        await _hard_exit_after_cleanup(stop_event)
+                        return
+
+            # ---------------- Normal assistant reply ----------------
             log.info("🤖  [reply] generating response…")
             reply = generate_reply(text, cfg=cfg_ai)
             log.info("📣  [reply] %s", reply)
 
+            # Metrics
             cycle_ms = int((time.perf_counter() - cycle_start) * 1000)
             log.info("⏱️  [cycle] done in %d ms\n", cycle_ms)
 
-            # Small cooperative pause
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=0.05)
             except asyncio.TimeoutError:
