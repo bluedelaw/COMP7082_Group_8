@@ -7,15 +7,6 @@ from typing import Optional
 import numpy as np
 import whisper
 
-import torch
-import os
-
-# Detect CPU core count
-num_threads = os.cpu_count()
-torch.set_num_threads(num_threads)
-
-print(f"🧩 Using {num_threads} CPU threads for Whisper")
-
 
 def _wav_to_float32_mono_16k(path: str) -> np.ndarray:
     """

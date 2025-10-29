@@ -2,44 +2,36 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 import wave
+import contextlib
 from typing import Optional, Tuple, List
 
-os.environ["PYTHONWARNINGS"] = "ignore"  # optional
-os.environ["ALSA_LIB_PATH"] = "/dev/null"
-os.environ["ALSA_LOGLEVEL"] = "0"
-
-
 import numpy as np
-try:
-    import pyaudio
-except ImportError:
-    pyaudio = None
-
+import pyaudio
 import torch
 import whisper
-import threading
-from contextlib import contextmanager, suppress
-
-import sys
-import contextlib
 
 import config as cfg
 
-# Module-level cache so we don't announce/select the device every chunk
+# Module-level cache so we don't re-select the device every call
 _CACHED_DEVICE_INDEX: Optional[int] = None
 _CACHED_DEVICE_NAME: Optional[str] = None
 
 
+# --- Linux-only: suppress noisy ALSA lib warnings during device enumeration ---
 @contextlib.contextmanager
-def suppress_alsa_warnings():
-    """Suppress ALSA lib warnings to keep logs clean."""
+def _suppress_alsa_warnings_if_linux():
+    if not sys.platform.startswith("linux"):
+        # No-op on non-Linux
+        yield
+        return
     stderr_fileno = sys.stderr.fileno()
     with open(os.devnull, "w") as devnull:
         old_stderr = os.dup(stderr_fileno)
-        os.dup2(devnull.fileno(), stderr_fileno)
         try:
+            os.dup2(devnull.fileno(), stderr_fileno)
             yield
         finally:
             os.dup2(old_stderr, stderr_fileno)
@@ -89,12 +81,12 @@ def load_whisper_model(model_size: Optional[str] = None) -> Tuple[whisper.Whispe
     return model, device, size
 
 
-def list_input_devices() -> list[tuple[int, str]]:
-    """Return list[(index, name)] of input-capable devices."""
-    import pyaudio
-    devices: list[tuple[int, str]] = []
-
-    with suppress_alsa_warnings():
+def list_input_devices() -> List[Tuple[int, str]]:
+    """
+    Return list[(index, name)] of input-capable devices.
+    """
+    devices: List[Tuple[int, str]] = []
+    with _suppress_alsa_warnings_if_linux():
         p = pyaudio.PyAudio()
         try:
             for i in range(p.get_device_count()):
@@ -105,79 +97,90 @@ def list_input_devices() -> list[tuple[int, str]]:
             p.terminate()
     return devices
 
-def print_input_devices():
-    devices = list_input_devices()
-    if not devices:
-        print("❌ No input devices found.", flush=True)
-    else:
-        print("🎤 Input-capable devices:", flush=True)
-        for idx, name in devices:
-            print(f"  [{idx}] {name}", flush=True)
 
+def get_default_input_device_index() -> int:
+    """
+    Prefer PyAudio's default input device. Fallback to first input-capable device.
+    Result is cached for the process lifetime.
+    """
+    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
+    if _CACHED_DEVICE_INDEX is not None:
+        return _CACHED_DEVICE_INDEX
 
-def get_default_input_device_index():
-    global pyaudio
-    print("🔍 Checking PyAudio import:", pyaudio)
-    if pyaudio is None:
-        print("❌ PyAudio not available. Please install it with: pip install pyaudio")
-        raise RuntimeError("PyAudio not available")
-
-    p = pyaudio.PyAudio()
-    count = p.get_device_count()
-    print(f"🎤 Found {count} audio devices")
-
-    if count == 0:
-        raise RuntimeError("❌ No input audio devices found.")
-
-    info = p.get_default_input_device_info()
-    print("✅ Default input device:", info)
-    return info.get("index")
-
-
-
-
-def record_wav(filename="output.wav", record_seconds=5, device_index=None):
-    import pyaudio, wave, time
-
-    frames = []
-    rate = 44100
-    frames_per_buffer = 1024
-
-    p = pyaudio.PyAudio()
-    if device_index is None:
-        device_index = p.get_default_input_device_info()['index']
-
-    stream = p.open(format=pyaudio.paInt16,
-                    channels=1,
-                    rate=rate,
-                    input=True,
-                    input_device_index=device_index,
-                    frames_per_buffer=frames_per_buffer)
-    
-    print(f"🎙️ Recording for {record_seconds}s…", flush=True)
-    start_time = time.time()
-    
-    while time.time() - start_time < record_seconds:
+    with _suppress_alsa_warnings_if_linux():
+        p = pyaudio.PyAudio()
         try:
-            data = stream.read(frames_per_buffer, exception_on_overflow=False)
-            frames.append(data)
-        except Exception as e:
-            print(f"❌ Error capturing audio: {e}", flush=True)
-    
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
+            try:
+                info = p.get_default_input_device_info()
+                idx = int(info.get("index"))
+                name = str(info.get("name"))
+            except Exception:
+                # Fallback: first input-capable device
+                devices = list_input_devices()
+                if not devices:
+                    raise RuntimeError("No input devices found. Check microphone permissions.")
+                idx, name = devices[0]
+        finally:
+            p.terminate()
 
-    with wave.open(filename, 'wb') as wf:
+    _CACHED_DEVICE_INDEX = idx
+    _CACHED_DEVICE_NAME = name
+    print(f"🎤 Using input device [{idx}] {name}")
+    return idx
+
+
+def record_wav(
+    filename: str,
+    record_seconds: int = cfg.RECORD_SECONDS,
+    sample_rate: int = cfg.SAMPLE_RATE,
+    chunk: int = cfg.CHUNK,
+    device_index: Optional[int] = None,
+) -> None:
+    """
+    Record mono 16-bit PCM WAV at the configured sample rate.
+    Robust against occasional buffer overruns.
+    """
+    ensure_dir(os.path.dirname(filename) or ".")
+    p = pyaudio.PyAudio()
+
+    if device_index is None:
+        device_index = get_default_input_device_index()
+
+    # Try to open the chosen device; on failure, fall back to default stream
+    try:
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=sample_rate,
+            input=True,
+            frames_per_buffer=chunk,
+            input_device_index=device_index,
+        )
+    except OSError:
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=sample_rate,
+            input=True,
+            frames_per_buffer=chunk,
+        )
+
+    frames: List[bytes] = []
+    try:
+        for _ in range(0, int(sample_rate / chunk * record_seconds)):
+            # Tolerate occasional overflow on busy systems
+            data = stream.read(chunk, exception_on_overflow=False)
+            frames.append(data)
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    with wave.open(filename, "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
-        wf.setframerate(rate)
-        wf.writeframes(b''.join(frames))
-
-    print(f"✅ Recording saved as {filename}", flush=True)
-
-  
-    
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"".join(frames))
 
 
 def amplify_wav(input_filename: str, output_filename: str, factor: float = cfg.AMP_FACTOR) -> str:
@@ -242,8 +245,3 @@ def record_and_prepare_chunk(
             except OSError:
                 pass
         return amp
-
-
-# Now you can safely call it
-if __name__ == "__main__":
-    print_input_devices()
