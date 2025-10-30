@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import wave
+import logging
 import contextlib
 from typing import Optional, Tuple, List
 
@@ -14,6 +15,8 @@ import torch
 import whisper
 
 import config as cfg
+
+log = logging.getLogger("jarvin.mic")
 
 # Module-level cache so we don't re-select the device every call
 _CACHED_DEVICE_INDEX: Optional[int] = None
@@ -74,7 +77,7 @@ def load_whisper_model(model_size: Optional[str] = None) -> Tuple[whisper.Whispe
     device = "cuda" if torch.cuda.is_available() else "cpu"
     size = model_size if model_size is not None else (cfg.WHISPER_MODEL_SIZE or detect_model_size())
 
-    print(f"🧠 Loading Whisper model '{size}' on {device}...")
+    log.info("🧠 Loading Whisper model '%s' on %s…", size, device)
     model = whisper.load_model(size, device=device)
     if device == "cuda":
         model.half()
@@ -125,7 +128,7 @@ def get_default_input_device_index() -> int:
 
     _CACHED_DEVICE_INDEX = idx
     _CACHED_DEVICE_NAME = name
-    print(f"🎤 Using input device [{idx}] {name}")
+    log.info("🎤 Using input device [%d] %s", idx, name)
     return idx
 
 

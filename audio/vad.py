@@ -91,6 +91,19 @@ class NoiseGateVAD:
         self.floor_rms = 50.0
         self.env_rms = 0.0
 
+    # ========== Context manager ==========
+    def __enter__(self) -> "NoiseGateVAD":
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        # Always close audio resources; do not suppress exceptions
+        try:
+            self.close()
+        except Exception:
+            pass
+        return False
+
     # ========== Lifecycle ==========
     def open(self) -> None:
         if self._pa:

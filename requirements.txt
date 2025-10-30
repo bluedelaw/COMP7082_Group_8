@@ -3,6 +3,10 @@
 fastapi==0.103.2
 uvicorn==0.29.0
 
+# Config (Pydantic v2)
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
 # Whisper + deps
 torch==2.0.1
 openai-whisper==20230918
@@ -16,6 +20,7 @@ python-multipart==0.0.9
 
 # For frontend
 gradio==4.44.1
+requests==2.32.3
 
 # For model provisioning from Hugging Face Hub
 huggingface-hub==0.25.2

@@ -1,68 +1,74 @@
+# scripts/list-mics.py
+from __future__ import annotations
+
+import sys
+import os
+import contextlib
 import pyaudio
 
-def list_working_input_devices() -> list[tuple[int, str]]:
-    """Return only devices that can actually open a stream at 16kHz mono."""
+@contextlib.contextmanager
+def _suppress_alsa_warnings_if_linux():
+    """Silence ALSA warnings on Linux; no-op elsewhere."""
+    if not sys.platform.startswith("linux"):
+        yield
+        return
+    stderr_fileno = sys.stderr.fileno()
+    with open(os.devnull, "w") as devnull:
+        old_stderr = os.dup(stderr_fileno)
+        try:
+            os.dup2(devnull.fileno(), stderr_fileno)
+            yield
+        finally:
+            os.dup2(old_stderr, stderr_fileno)
+            os.close(old_stderr)
+
+def _list_input_devices() -> list[tuple[int, str]]:
+    """All input-capable devices: [(index, name)]."""
+    devices: list[tuple[int, str]] = []
     p = pyaudio.PyAudio()
-    working = []
     try:
         for i in range(p.get_device_count()):
             info = p.get_device_info_by_index(i)
-            if info.get("maxInputChannels", 0) < 1:
-                continue
-            # Try opening the device
+            if info.get("maxInputChannels", 0) > 0:
+                devices.append((i, info["name"]))
+    finally:
+        p.terminate()
+    return devices
+
+def list_working_input_devices(rate: int = 16_000, chunk: int = 1024) -> list[tuple[int, str]]:
+    """
+    Return devices that can actually open a mono stream at `rate` Hz.
+    """
+    working: list[tuple[int, str]] = []
+    p = pyaudio.PyAudio()
+    try:
+        for idx, name in _list_input_devices():
             try:
                 stream = p.open(
                     format=pyaudio.paInt16,
                     channels=1,
-                    rate=16000,
+                    rate=rate,
                     input=True,
-                    input_device_index=i,
-                    frames_per_buffer=1024,
+                    input_device_index=idx,
+                    frames_per_buffer=chunk,
                 )
                 stream.close()
-                working.append((i, info["name"]))
+                working.append((idx, name))
             except Exception:
-                # Skip devices that cannot open
+                # Exists but incompatible with requested params
                 continue
     finally:
         p.terminate()
     return working
 
-def get_default_input_device_index() -> int:
-    """
-    Choose and cache the first input device that can open a PyAudio stream.
-    Auto-detects supported sample rate.
-    """
-    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
-    if _CACHED_DEVICE_INDEX is not None:
-        return _CACHED_DEVICE_INDEX
+if __name__ == "__main__":
+    with _suppress_alsa_warnings_if_linux():
+        devices = list_working_input_devices()
 
-    from audio.mic import list_input_devices  # existing function
-
-    devices = list_input_devices()
     if not devices:
-        raise RuntimeError("No input devices found. Check microphone permissions.")
+        print("No working input devices at 16 kHz mono.")
+        sys.exit(1)
 
-    p = pyaudio.PyAudio()
+    print("Working input devices (16 kHz mono):")
     for idx, name in devices:
-        try:
-            info = p.get_device_info_by_index(idx)
-            rate = int(info.get("defaultSampleRate", 16000))
-            stream = p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=rate,
-                input=True,
-                input_device_index=idx,
-                frames_per_buffer=cfg.CHUNK,
-            )
-            stream.close()
-            _CACHED_DEVICE_INDEX = idx
-            _CACHED_DEVICE_NAME = name
-            print(f"🎤 Using input device [{idx}] {name} @ {rate} Hz")
-            return idx
-        except Exception:
-            continue
-
-    raise RuntimeError("No compatible input devices found.")
-
+        print(f"[{idx}] {name}")

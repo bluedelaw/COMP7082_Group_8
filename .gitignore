@@ -4,3 +4,4 @@ __pycache__
 /temp
 jarvin.log
 /models
+/jarvin_local.egg-info
