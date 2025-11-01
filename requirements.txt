@@ -15,7 +15,9 @@ pyaudio==0.2.13
 python-multipart==0.0.9
 
 # For frontend
-gradio==4.44.1
+gradio==5.49.1
+soundfile
+librosa
 
 # For model provisioning from Hugging Face Hub
 huggingface-hub==0.25.2

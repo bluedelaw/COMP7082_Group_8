@@ -1,5 +1,6 @@
 # backend/llm_runtime.py
 from __future__ import annotations
+import os
 
 import logging
 from functools import lru_cache
