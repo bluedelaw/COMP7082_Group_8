@@ -1,141 +1,209 @@
 import gradio as gr
-from audio.speech_recognition import transcribe_audio
-from backend.ai_engine import generate_reply, JarvinConfig
-import config as cfg
+from frontend.components import CSS
+from frontend.handlers import process_audio, save_user_profile, clear_conversation_history, update_history_display, get_save_confirmation
+from memory.conversation import get_conversation_history
 
-# Jarvin system prompt
-JARVIN_SYSTEM_PROMPT = """
-You are Jarvin, a friendly and helpful AI assistant. 
-Your tone should be warm, encouraging, and positive.
-Always be supportive and provide useful guidance.
-"""
+def create_app():
+    with gr.Blocks(css=CSS) as demo:
+        # Create the interface and get all components
+        components = {}
+        
+        with gr.Row():
+            gr.Markdown("<h1 style='margin:0'>Jarvin - Your AI Assistant</h1>")
 
-# Function that ties transcription + AI reply together
-def process_audio(audio_path: str, user_context: dict):
-    if not audio_path:
-        return "No audio input detected.", "No reply generated."
+        components['user_context'] = gr.State({})
+        components['conversation_memory'] = gr.State([])
+        # Add state to store current transcription and reply
+        components['current_transcription'] = gr.State("")
+        components['current_reply'] = gr.State("")
 
-    text = transcribe_audio(audio_path).strip()
-    if not text:
-        return "(empty transcription)", "No reply generated."
+        with gr.Tabs():
+            # User Profile Tab
+            with gr.Tab("👤 User Profile"):
+                gr.Markdown("### 🧠 Personalize Your Jarvin Experience")
+                
+                with gr.Row():
+                    with gr.Column():
+                        components['name'] = gr.Textbox(label="Your Name", placeholder="e.g., Kohei")
+                        components['goal'] = gr.Textbox(label="Current Goal / Task", placeholder="e.g., Working on a Flask app")
+                        components['mood'] = gr.Dropdown(
+                            label="Your Current Mood",
+                            choices=["Focused", "Stressed", "Curious", "Relaxed", "Tired", "Creative", "Problem-Solving"],
+                            value="Focused",
+                        )
+                    
+                    with gr.Column():
+                        components['communication_style'] = gr.Dropdown(
+                            label="Preferred Communication Style",
+                            choices=["Friendly", "Professional", "Casual", "Encouraging", "Direct"],
+                            value="Friendly",
+                        )
+                        
+                        components['response_length'] = gr.Dropdown(
+                            label="Preferred Response Length",
+                            choices=["Concise", "Balanced", "Detailed"],
+                            value="Balanced",
+                        )
 
-    cfg_ai = JarvinConfig()
-    context_text = ""
-    if user_context:
-        context_text = (
-            f"User Name: {user_context.get('name', 'Unknown')}\n"
-            f"Goal: {user_context.get('goal', 'None')}\n"
-            f"Mood: {user_context.get('mood', 'Neutral')}\n\n"
+                components['save_btn'] = gr.Button("💾 Save Profile Settings")
+                components['status'] = gr.Markdown("", elem_classes="status-text")
+            
+            # Jarvin Chat Tab
+            with gr.Tab("🤖 Jarvin Chat"):
+                gr.Markdown("### 🎙️ Chat with Jarvin")
+                gr.Markdown("**Click the microphone, speak, then click stop - processing starts immediately**", elem_classes="recording-status")
+                
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("#### ⚙️ Settings")
+                        components['use_memory'] = gr.Checkbox(
+                            label="Use Conversation Memory",
+                            value=True,
+                            info="Remember previous messages in this session"
+                        )
+                        
+                        components['response_style'] = gr.Radio(
+                            label="Response Style",
+                            choices=["balanced", "concise", "detailed", "encouraging"],
+                            value="balanced",
+                            info="Adjust how Jarvin responds"
+                        )
+                        
+                        components['clear_btn'] = gr.Button("🗑️ Clear Conversation", elem_classes="clear-btn")
+                        
+                    with gr.Column(scale=2):
+                        components['audio_input'] = gr.Audio(
+                            sources="microphone", 
+                            type="filepath", 
+                            label="🎤 Click to Record",
+                            interactive=True,
+                            show_download_button=False
+                        )
+
+                        components['transcription'] = gr.Textbox(
+                            label="📝 Your Message",
+                            placeholder="Transcription will appear here...",
+                            lines=2
+                        )
+                        
+                        components['ai_reply'] = gr.Textbox(
+                            label="🤖 Jarvin's Response",
+                            placeholder="Jarvin's reply will appear here...",
+                            lines=6,
+                            max_lines=8
+                        )
+                
+                # Conversation history display - made scrollable
+                with gr.Accordion("💬 Conversation History", open=False):
+                    components['history_display'] = gr.Textbox(
+                        label="",
+                        lines=8,
+                        max_lines=12,
+                        interactive=False,
+                        show_copy_button=True,  # Add copy button for convenience
+                        autoscroll=True  # Auto-scroll to bottom
+                    )
+
+        def process_and_store_audio(audio_path, user_context, use_memory, response_style, current_transcription, current_reply, conversation_memory):
+            """Process audio and store results in state"""
+            if audio_path:  # Only process if we have new audio
+                text, reply, history = process_audio(audio_path, user_context, use_memory, response_style)
+                # Store the new results in state and return all 5 required outputs
+                return text, reply, history, text, reply
+            else:
+                # No new audio, return the stored values (all 5 outputs)
+                # Use the current conversation_memory state to preserve history
+                return current_transcription, current_reply, conversation_memory, current_transcription, current_reply
+
+        def update_display_from_state(current_transcription, current_reply):
+            """Update the display with stored values"""
+            return current_transcription, current_reply
+
+        # Process audio and store results
+        components['audio_input'].change(
+            fn=process_and_store_audio,
+            inputs=[
+                components['audio_input'],
+                components['user_context'], 
+                components['use_memory'],
+                components['response_style'],
+                components['current_transcription'],
+                components['current_reply'],
+                components['conversation_memory']  # Add this input
+            ],
+            outputs=[
+                components['current_transcription'],  # Store transcription in state
+                components['current_reply'],          # Store reply in state
+                components['conversation_memory'],    # Update conversation history
+                components['transcription'],          # Update display
+                components['ai_reply']                # Update display
+            ]
+        ).then(
+            # Clear audio input after processing
+            fn=lambda: None,
+            outputs=[components['audio_input']]
         )
 
-    # Combine Jarvin's identity with user context and query
-    prompt = f"{JARVIN_SYSTEM_PROMPT}\n\n{context_text}User said: {text}"
-    reply = generate_reply(prompt, cfg=cfg_ai)
+        # Initialize display with stored values
+        demo.load(
+            fn=update_display_from_state,
+            inputs=[
+                components['current_transcription'],
+                components['current_reply']
+            ],
+            outputs=[
+                components['transcription'],
+                components['ai_reply']
+            ]
+        )
+        
+        components['save_btn'].click(
+            fn=save_user_profile,
+            inputs=[
+                components['name'],
+                components['goal'],
+                components['mood'],
+                components['communication_style'],
+                components['response_length']
+            ],
+            outputs=[components['user_context']]
+        ).then(
+            fn=get_save_confirmation,
+            outputs=[components['status']]
+        )
+        
+        def clear_all_conversation():
+            """Clear conversation history and current results"""
+            history = clear_conversation_history()
+            return "", "", history
 
-    return text, reply
-
-
-css = """
-body {
-    background-color: #1f1f2e;
-    color: #f5f5f5;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.gradio-container {
-    border-radius: 12px;
-    padding: 20px;
-}
-
-.tab-content {
-    background-color: #2c2c3e;
-    border-radius: 8px;
-    padding: 20px;
-    margin-top: 10px;
-}
-
-.gr-button {
-    background-color: #4f46e5;
-    color: white;
-    border-radius: 8px;
-    border: none;
-    padding: 10px 20px;
-    font-weight: bold;
-}
-
-.gr-button:hover {
-    background-color: #6366f1;
-}
-
-.gradio-tabs button {
-    background-color: #3b3b4e;
-    color: #f5f5f5;
-    border-radius: 8px 8px 0 0;
-    padding: 10px 20px;
-    margin-right: 2px;
-    font-weight: bold;
-}
-
-.gradio-tabs button:focus {
-    outline: none;
-    background-color: #57577f;
-}
-"""
-
-
-with gr.Blocks(css=css) as demo:
-    with gr.Row():
-        gr.Markdown("<h1 style='margin:0'>Jarvin</h1>")
-
-    user_context = gr.State({})
-
-    with gr.Tabs():
-        # ===== USER TAB =====
-        with gr.Tab("User"):
-            gr.Markdown("### 🧠 Set Jarvin's Context")
-            name = gr.Textbox(label="Your Name", placeholder="e.g., Kohei")
-            goal = gr.Textbox(label="Current Goal / Task", placeholder="e.g., Working on a Flask app")
-            mood = gr.Dropdown(
-                label="Your Mood",
-                choices=["Focused", "Stressed", "Curious", "Relaxed", "Tired"],
-                value="Focused",
-            )
-
-            save_btn = gr.Button("💾 Save Context")
-
-            # When user clicks Save, store info in state
-            def save_user_context(name, goal, mood):
-                return {"name": name, "goal": goal, "mood": mood}
-
-            save_btn.click(save_user_context, inputs=[name, goal, mood], outputs=user_context)
-            gr.Markdown("*(Jarvin will use this context in future replies.)*")
-
-        # ===== JARVIN TAB =====
-        with gr.Tab("Jarvin"):
-            gr.Markdown("### 🎙️ Speak to Jarvin")
-            gr.Markdown("**Click record, speak, then click stop - Jarvin will respond automatically**")
-            
-            audio_input = gr.Audio(
-                sources="microphone", 
-                type="filepath", 
-                label="🎤 Your Voice",
-                interactive=True
-            )
-
-            with gr.Row():
-                transcription = gr.Textbox(label="📝 Transcription")
-                ai_reply = gr.Textbox(
-                    label="🤖 Jarvin's Reply",
-                    lines=5,  # Increased from default to make it larger
-                    max_lines=10  # Allow it to grow even more if needed
-                )
-
-            # Use .change instead of .stop for immediate processing
-            audio_input.change(
-                fn=process_audio,
-                inputs=[audio_input, user_context],
-                outputs=[transcription, ai_reply],
-            )
+        components['clear_btn'].click(
+            fn=clear_all_conversation,
+            outputs=[
+                components['current_transcription'],
+                components['current_reply'],
+                components['conversation_memory']
+            ]
+        ).then(
+            fn=update_display_from_state,
+            inputs=[
+                components['current_transcription'],
+                components['current_reply']
+            ],
+            outputs=[
+                components['transcription'],
+                components['ai_reply']
+            ]
+        )
+        
+        components['conversation_memory'].change(
+            fn=update_history_display,
+            inputs=[components['conversation_memory']],
+            outputs=[components['history_display']]
+        )
+    
+    return demo
 
 if __name__ == "__main__":
+    demo = create_app()
     demo.launch()
