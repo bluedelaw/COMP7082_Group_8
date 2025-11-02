@@ -14,16 +14,13 @@ from backend.llm_bootstrap import provision_llm
 from backend.routes.transcription import router as transcription_router
 from backend.routes.control import router as control_router
 from backend.routes.health import router as health_router
+from backend.routes.chat import router as chat_router  # NEW
+from backend.routes.live import router as live_router   # NEW
 
 log = logging.getLogger("jarvin")
 
-
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """
-    Lifespan manager: provisions the LLM (optional) and starts/stops the listener task.
-    No logging initialization here (caller/launcher handles that).
-    """
     app.state.stop_event = asyncio.Event()
 
     if cfg.LLM_AUTO_PROVISION:
@@ -52,12 +49,7 @@ async def _lifespan(app: FastAPI):
                 await task
         log.info("✅ Listener stopped.")
 
-
 def create_app() -> FastAPI:
-    """
-    App factory: builds and returns a FastAPI app wired with middleware, routes, and lifespan.
-    Keeping construction side-effect free improves modularity and testability.
-    """
     app = FastAPI(title="Jarvin Local", lifespan=_lifespan)
 
     app.add_middleware(
@@ -68,9 +60,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Mount route modules
     app.include_router(health_router)
     app.include_router(transcription_router)
     app.include_router(control_router)
+    app.include_router(chat_router)  # NEW
+    app.include_router(live_router)  # NEW
 
     return app

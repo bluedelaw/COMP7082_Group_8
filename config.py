@@ -7,6 +7,10 @@ via environment variables (prefix: JARVIN_). For example:
   JARVIN_SAMPLE_RATE=44100
   JARVIN_LOG_LEVEL=debug
   JARVIN_CORS_ALLOW_ORIGINS='["http://localhost:3000"]'
+  JARVIN_SERVER_HOST=0.0.0.0
+  JARVIN_SERVER_PORT=8000
+  JARVIN_GRADIO_AUTO_OPEN=true
+  JARVIN_GRADIO_OPEN_DELAY_SEC=1.0
 
 Backwards compatibility:
 - All previous module-level constants still exist and are populated from
@@ -127,6 +131,21 @@ class Settings(BaseSettings):
     # If True, require a second voice confirmation.
     voice_shutdown_confirm: bool = False
 
+    # ---------------- Server / Gradio UI ----------------
+    # Where uvicorn binds; the UI is mounted into the same app.
+    server_host: str = "0.0.0.0"
+    server_port: int = 8000
+
+    # Control Gradio behavior without requiring users to set env vars.
+    gradio_use_cdn: bool = True
+    gradio_analytics_enabled: bool = False
+    # Where to mount the UI. Default "/ui" (safer than root).
+    gradio_mount_path: str = "/ui"
+
+    # Auto-open a browser to the mounted Gradio UI on server start.
+    gradio_auto_open: bool = True
+    gradio_open_delay_sec: float = 1.0
+
     class Config:
         env_prefix = "JARVIN_"
         case_sensitive = False
@@ -143,9 +162,9 @@ class Settings(BaseSettings):
 # Instantiate settings once
 settings = Settings()
 
-# ------------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Backwards-compatible module-level symbols (mirror previous constants)
-# ------------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Audio / capture
 SAMPLE_RATE: int = settings.sample_rate
 CHUNK: int = settings.chunk
@@ -210,3 +229,14 @@ VAD_FLOOR_ADAPT_MARGIN: float = settings.vad_floor_adapt_margin
 
 # Voice shutdown
 VOICE_SHUTDOWN_CONFIRM: bool = settings.voice_shutdown_confirm
+
+# ---------------- Server / Gradio UI (module-level mirrors) -------------
+SERVER_HOST: str = settings.server_host
+SERVER_PORT: int = settings.server_port
+
+GRADIO_USE_CDN: bool = settings.gradio_use_cdn
+GRADIO_ANALYTICS_ENABLED: bool = settings.gradio_analytics_enabled
+GRADIO_MOUNT_PATH: str = settings.gradio_mount_path
+
+GRADIO_AUTO_OPEN: bool = settings.gradio_auto_open
+GRADIO_OPEN_DELAY_SEC: float = settings.gradio_open_delay_sec
