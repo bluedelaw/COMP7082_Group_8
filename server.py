@@ -108,6 +108,7 @@ def main() -> int:
                 reload=True,
                 log_level=cfg.LOG_LEVEL,
                 factory=True,                # <- IMPORTANT
+                access_log=cfg.UVICORN_ACCESS_LOG,  # <<< kills 200 OK spam when False
             )
         else:
             uvicorn.run(
@@ -116,6 +117,7 @@ def main() -> int:
                 port=port,
                 reload=False,
                 log_level=cfg.LOG_LEVEL,
+                access_log=cfg.UVICORN_ACCESS_LOG,  # <<< kills 200 OK spam when False
             )
         return 0
     except KeyboardInterrupt:

@@ -15,7 +15,7 @@ from audio.wav_io import write_wav_int16_mono
 from backend.ai_engine import generate_reply, JarvinConfig
 from backend.intent import intent_shutdown, intent_confirm, CONFIRM_WINDOW_SEC
 from backend.util.paths import temp_path
-from backend.live_state import set_snapshot  # NEW
+from backend.live_state import set_snapshot, set_status  # UPDATED
 
 log = logging.getLogger("jarvin")
 
@@ -75,10 +75,22 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
     # If confirmation mode is enabled, track its window
     pending_shutdown_deadline: Optional[float] = None
 
-    vad = NoiseGateVAD(sample_rate=cfg.SAMPLE_RATE, chunk=cfg.CHUNK, device_index=device_index)
+    # Hook to surface “recording” state to the UI in real-time
+    def _on_recording(flag: bool) -> None:
+        set_status(recording=flag)
+
+    vad = NoiseGateVAD(
+        sample_rate=cfg.SAMPLE_RATE,
+        chunk=cfg.CHUNK,
+        device_index=device_index,
+        on_recording=_on_recording,  # NEW
+    )
     stopper_task: Optional[asyncio.Task] = None
 
     try:
+        # Ensure UI flags are clean before entering the stream
+        set_status(recording=False, processing=False)
+
         # Use context manager to guarantee resource cleanup
         with vad:
             stopper_task = asyncio.create_task(_watch_stop_event(stop_event, vad))
@@ -115,7 +127,12 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                 write_wav_int16_mono(wav_path, pcm, sr, normalize_dbfs=cfg.NORMALIZE_TO_DBFS)
                 log.info("💾 saved utterance → %s", wav_path)
 
+                # We just transitioned from recording -> not recording.
+                # The system is now busy transcribing/LLM; reflect that to UI.
+                set_status(processing=True)
+
                 if stop_event.is_set():
+                    set_status(processing=False)
                     return
 
                 # Transcribe (Whisper is CPU/GPU-bound) — run in a thread
@@ -135,6 +152,8 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                         utter_ms=int(utt_len_sec * 1000),
                         wav_path=wav_path,
                     )
+                    # Done processing this (empty) turn
+                    set_status(processing=False)
                     continue
 
                 log.info("📝  [result] “%s” (%d ms)", text, t_ms)
@@ -144,6 +163,8 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                     # Single-shot: immediate exit on hotword
                     if intent_shutdown(text):
                         log.info("🛑 Voice shutdown requested. Exiting immediately…")
+                        # Ensure we drop processing flag before exit
+                        set_status(processing=False)
                         await _hard_exit_after_cleanup(stop_event)
                         return  # not reached
                 else:
@@ -165,7 +186,7 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                                 await asyncio.wait_for(stop_event.wait(), timeout=0.05)
                             except asyncio.TimeoutError:
                                 pass
-                            # Publish snapshot with the prompt as reply (UI sees the same)
+                            # Prompt user; still processing ends here
                             set_snapshot(
                                 transcript=text,
                                 reply="To confirm shutdown, say: 'confirm shutdown'.",
@@ -173,10 +194,12 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                                 utter_ms=int(utt_len_sec * 1000),
                                 wav_path=wav_path,
                             )
+                            set_status(processing=False)
                             continue
                     else:
                         if intent_confirm(text):
                             log.info("🛑 Voice confirmation received. Shutting down now…")
+                            set_status(processing=False)
                             await _hard_exit_after_cleanup(stop_event)
                             return
 
@@ -199,6 +222,9 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                     wav_path=wav_path,
                 )
 
+                # Done processing for this turn
+                set_status(processing=False)
+
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=0.05)
                 except asyncio.TimeoutError:
@@ -212,3 +238,5 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                 stopper_task.cancel()
         except Exception:
             pass
+        # ensure UI doesn't stay “recording/processing” if we exit mid-utterance
+        set_status(recording=False, processing=False)

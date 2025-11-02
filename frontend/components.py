@@ -47,7 +47,30 @@ body {
 
 /* ---- Status & info ---- */
 .status-text { color: #10b981; font-weight: bold; margin: 10px 0; }
-.recording-status { color: #f59e0b; font-weight: bold; }
+
+/* Color tokens for state badges */
+.status-badge {
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}
+.status-listening { background: #064e3b; color: #a7f3d0; }   /* green */
+.status-recording { background: #7f1d1d; color: #fecaca; }   /* red */
+.status-stopped   { background: #374151; color: #e5e7eb; }   /* gray */
+
+/* Spinner for “LLM thinking” */
+.spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: rgba(255,255,255,0.9);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    margin-right: 6px;
+    vertical-align: -1px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- Live tab stable grid ---- */
 .live-grid {
@@ -106,6 +129,30 @@ body {
 .conversation-history::-webkit-scrollbar-track { background: #4b5563; border-radius: 4px; }
 .conversation-history::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 4px; }
 .conversation-history::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* Bubble-style alignment if the container renders HTML (Chatbot or Markdown) */
+.chatline {
+    display: flex;
+    margin: 6px 0;
+}
+.chatline .bubble {
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+}
+.chatline.user   { justify-content: flex-end; }
+.chatline.user .bubble {
+    background: #2563eb;
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+.chatline.assistant { justify-content: flex-start; }
+.chatline.assistant .bubble {
+    background: #111827;
+    color: #f3f4f6;
+    border-bottom-left-radius: 4px;
+}
 
 /* Minor: trim default markdown margins globally to avoid bumps */
 .gr-markdown, .gr-prose, .prose { margin-top: 0.25rem; margin-bottom: 0.25rem; }

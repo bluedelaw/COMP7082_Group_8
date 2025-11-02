@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from fastapi import APIRouter, Request
 
 from backend.schemas import StatusResponse, SimpleMessage
@@ -53,3 +54,26 @@ async def stop_listener(request: Request) -> SimpleMessage:
     app.state.stop_event.set()
     log.info("Listener stop requested via control API.")
     return SimpleMessage(ok=True, message="Listener stopping...")
+
+
+@router.post("/shutdown", response_model=SimpleMessage)
+async def shutdown_server(request: Request) -> SimpleMessage:
+    """
+    Terminate the entire FastAPI + UI process. We set the stop_event to
+    let the listener clean up, then exit the process shortly after
+    returning a response (so the client gets HTTP 200).
+    """
+    app = request.app
+    try:
+        app.state.stop_event.set()
+    except Exception:
+        pass
+
+    async def _exit_soon():
+        # small delay so the HTTP response can flush
+        await asyncio.sleep(0.15)
+        os._exit(0)
+
+    asyncio.create_task(_exit_soon())
+    log.info("Shutdown requested via control API. Exiting process…")
+    return SimpleMessage(ok=True, message="Server shutting down.")

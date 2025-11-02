@@ -29,10 +29,15 @@ async def _lifespan(app: FastAPI):
         except Exception as e:
             log.exception("LLM provisioning failed: %s", e)
 
-    app.state.listener_task = asyncio.create_task(
-        run_listener(app.state.stop_event, initial_delay=cfg.INITIAL_LISTENER_DELAY)
-    )
-    log.info("🎧 Listener task started automatically on server boot.")
+    # Start listener conditionally based on config
+    app.state.listener_task = None
+    if cfg.START_LISTENER_ON_BOOT:
+        app.state.listener_task = asyncio.create_task(
+            run_listener(app.state.stop_event, initial_delay=cfg.INITIAL_LISTENER_DELAY)
+        )
+        log.info("🎧 Listener task started automatically on server boot.")
+    else:
+        log.info("🟡 START_LISTENER_ON_BOOT is False — server starts deaf; use /start to begin listening.")
 
     try:
         yield

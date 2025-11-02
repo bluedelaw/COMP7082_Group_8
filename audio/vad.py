@@ -7,7 +7,7 @@ import os
 import sys
 import time
 import wave
-from typing import Deque, Generator, Optional, Tuple
+from typing import Callable, Deque, Generator, Optional, Tuple
 
 import numpy as np
 import pyaudio
@@ -63,12 +63,14 @@ class NoiseGateVAD:
       - pre-roll buffer
       - TTY idle status line
       - external stop request to unblock read()
+      - OPTIONAL callback to signal recording state (speech active/inactive)
     """
     def __init__(
         self,
         sample_rate: int = cfg.SAMPLE_RATE,
         chunk: int = cfg.CHUNK,
         device_index: Optional[int] = None,
+        on_recording: Optional[Callable[[bool], None]] = None,  # NEW
     ) -> None:
         self.sample_rate = sample_rate
         self.chunk = chunk
@@ -91,17 +93,23 @@ class NoiseGateVAD:
         self.floor_rms = 50.0
         self.env_rms = 0.0
 
+        # Callback
+        self._on_recording = on_recording
+
     # ========== Context manager ==========
     def __enter__(self) -> "NoiseGateVAD":
         self.open()
+        # ensure UI knows we are not recording at start
+        self._notify_recording(False)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
         # Always close audio resources; do not suppress exceptions
         try:
             self.close()
-        except Exception:
-            pass
+        finally:
+            # guarantee "not recording" on shutdown
+            self._notify_recording(False)
         return False
 
     # ========== Lifecycle ==========
@@ -177,6 +185,14 @@ class NoiseGateVAD:
 
     def _threshold(self) -> float:
         return max(cfg.VAD_THRESHOLD_ABS, self.floor_rms * cfg.VAD_THRESHOLD_MULT)
+
+    def _notify_recording(self, flag: bool) -> None:
+        try:
+            if self._on_recording is not None:
+                self._on_recording(flag)
+        except Exception:
+            # Callback must never crash the VAD loop
+            pass
 
     def calibrate(self, seconds: float = cfg.VAD_CALIBRATION_SEC) -> None:
         """Gather background frames to initialize noise floor."""
@@ -259,6 +275,8 @@ class NoiseGateVAD:
                 above_cnt = above_cnt + 1 if is_above else 0
                 if above_cnt >= attack_needed:
                     in_speech = True
+                    # notify UI: recording started
+                    self._notify_recording(True)
                     hangover = 0
                     cur = list(prebuf)
                     cur.append(frame)
@@ -300,6 +318,9 @@ class NoiseGateVAD:
                         self._status.clear()
                         log.info("⏹ END  | %s | dur=%.0f ms frames=%d avgRMS=%.1f peak=%d thr≈%.1f",
                                  stop_reason, utt_ms, len(cur), avg_rms, peak, thr)
+
+                    # notify UI: recording stopped
+                    self._notify_recording(False)
 
                     if utt_ms >= cfg.VAD_MIN_UTTERANCE_MS:
                         yield pcm, self.sample_rate

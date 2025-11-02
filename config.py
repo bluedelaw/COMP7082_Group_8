@@ -49,10 +49,15 @@ class Settings(BaseSettings):
 
     # Listener / startup behavior
     initial_listener_delay: float = 0.2
+    # NEW: start the background mic listener on boot. Set False for “deaf on boot”.
+    start_listener_on_boot: bool = True
 
     # Uvicorn reload behavior
     uvicorn_reload_windows: bool = False
     uvicorn_reload_others: bool = True
+
+    # NEW: control Uvicorn access logs (GET/POST 200 lines). Default: off.
+    uvicorn_access_log: bool = False
 
     # ---------------- Local LLM (llama.cpp) settings ----------------
     models_dir: str = "models"
@@ -188,10 +193,12 @@ DELETE_RAW_AFTER_AMPLIFY: bool = settings.delete_raw_after_amplify
 
 # Listener / startup
 INITIAL_LISTENER_DELAY: float = settings.initial_listener_delay
+START_LISTENER_ON_BOOT: bool = settings.start_listener_on_boot  # NEW
 
-# Uvicorn reload
+# Uvicorn reload + access logs
 UVICORN_RELOAD_WINDOWS: bool = settings.uvicorn_reload_windows
 UVICORN_RELOAD_OTHERS: bool = settings.uvicorn_reload_others
+UVICORN_ACCESS_LOG: bool = settings.uvicorn_access_log  # NEW
 
 # Local LLM
 MODELS_DIR: str = settings.models_dir
