@@ -84,21 +84,14 @@ class Poller:
         """
         banner_out, start_u, pause_u, s, l = self._status_updates()
 
-        # Transcript & reply
-        t = (l.get("transcript") or "").strip()
-        r = (l.get("reply") or "").strip()
+        # Current values
+        t_now = (l.get("transcript") or "").strip()
+        r_now = (l.get("reply") or "").strip()
 
-        if t != self._last_transcript:
-            t_out: str | gr.Update = t
-            self._last_transcript = t
-        else:
-            t_out = gr.update()
-
-        if r != self._last_reply:
-            r_out: str | gr.Update = r
-            self._last_reply = r
-        else:
-            r_out = gr.update()
+        # Determine if either changed BEFORE mutating caches (fixes history not updating)
+        transcript_changed = t_now != self._last_transcript
+        reply_changed = r_now != self._last_reply
+        pair_changed = transcript_changed or reply_changed
 
         # Metrics: edge detect processing True -> False
         utt_ms = l.get("utter_ms")
@@ -119,20 +112,28 @@ class Poller:
                 self._last_metrics_key = key
         self._last_processing = processing_now
 
-        # Conversation history append-on-change
-        changed = False
+        # Conversation history append-on-change (uses old caches intentionally)
         hist = (conversation_memory or []).copy()
-        if t and (t != self._last_transcript or r != self._last_reply):
-            hist.append(("user", t))
-            if r:
-                hist.append(("assistant", r))
-            changed = True
-
-        if changed:
+        if t_now and pair_changed:
+            hist.append(("user", t_now))
+            if r_now:
+                hist.append(("assistant", r_now))
             hist_out: list[tuple[str, str]] | gr.Update = hist
-            self._last_hist_len = len(hist)
         else:
             hist_out = gr.update()
+
+        # Now update caches and textbox outputs
+        if transcript_changed:
+            t_out: str | gr.Update = t_now
+            self._last_transcript = t_now
+        else:
+            t_out = gr.update()
+
+        if reply_changed:
+            r_out: str | gr.Update = r_now
+            self._last_reply = r_now
+        else:
+            r_out = gr.update()
 
         return (
             banner_out,  # status_banner

@@ -45,7 +45,8 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
         except asyncio.TimeoutError:
             pass
 
-    model, device = get_cached_model_and_device(None)
+    # 🔁 Respect config.whisper_model_size instead of hard-coded default
+    model, device = get_cached_model_and_device(cfg.settings.whisper_model_size)
     log.info("🧠 Whisper ready | device=%s", device)
 
     try:
@@ -82,7 +83,7 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
             log.info("⚙️  Calibrating noise floor for %.1fs…", s.vad_calibration_sec)
 
             await asyncio.to_thread(vad.calibrate, s.vad_calibration_sec)
-            log.info("📉 Initial floor RMS=%.1f, threshold≈%.1f", vad.floor_rms, vad_threshold(vad.floor_rms))  # <-- CHANGED
+            log.info("📉 Initial floor RMS=%.1f, threshold≈%.1f", vad.floor_rms, vad_threshold(vad.floor_rms))
 
             utter_gen = vad.utterances()
             while not stop_event.is_set():
