@@ -2,76 +2,34 @@
 from __future__ import annotations
 
 import os
-import sys
 import time
 import wave
 import logging
-import contextlib
-from typing import Optional, Tuple, List
+from typing import Optional, List, Tuple
 
 import numpy as np
 import pyaudio
-import torch
-import whisper
 
 import config as cfg
+from audio.utils import suppress_alsa_warnings_if_linux
 
 log = logging.getLogger("jarvin.mic")
 
 _CACHED_DEVICE_INDEX: Optional[int] = None
 _CACHED_DEVICE_NAME: Optional[str] = None
 
-@contextlib.contextmanager
-def _suppress_alsa_warnings_if_linux():
-    if not sys.platform.startswith("linux"):
-        yield
-        return
-    stderr_fileno = sys.stderr.fileno()
-    with open(os.devnull, "w") as devnull:
-        old_stderr = os.dup(stderr_fileno)
-        try:
-            os.dup2(devnull.fileno(), stderr_fileno)
-            yield
-        finally:
-            os.dup2(old_stderr, stderr_fileno)
-            os.close(old_stderr)
 
 def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
+
 def ensure_temp() -> None:
     os.makedirs(cfg.settings.temp_dir, exist_ok=True)
 
-def detect_model_size() -> str:
-    if torch.cuda.is_available():
-        props = torch.cuda.get_device_properties(0)
-        vram_gb = props.total_memory / (1024 ** 3)
-        if vram_gb < 4:
-            return "tiny"
-        elif vram_gb < 6:
-            return "base"
-        elif vram_gb < 10:
-            return "small"
-        elif vram_gb < 16:
-            return "medium"
-        else:
-            return "large"
-    return "base"
 
-def load_whisper_model(model_size: Optional[str] = None) -> Tuple[whisper.Whisper, str, str]:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    s = cfg.settings
-    size = model_size if model_size is not None else (s.whisper_model_size or detect_model_size())
-
-    log.info("🧠 Loading Whisper model '%s' on %s…", size, device)
-    model = whisper.load_model(size, device=device)
-    if device == "cuda":
-        model.half()
-    return model, device, size
-
-def list_input_devices() -> List[Tuple[int, str]]:
+def list_input_devices() -> List[Tuple[int, str]]:  # type: ignore[name-defined]
     devices: List[Tuple[int, str]] = []
-    with _suppress_alsa_warnings_if_linux():
+    with suppress_alsa_warnings_if_linux():
         p = pyaudio.PyAudio()
         try:
             for i in range(p.get_device_count()):
@@ -82,12 +40,13 @@ def list_input_devices() -> List[Tuple[int, str]]:
             p.terminate()
     return devices
 
+
 def get_default_input_device_index() -> int:
     global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
     if _CACHED_DEVICE_INDEX is not None:
         return _CACHED_DEVICE_INDEX
 
-    with _suppress_alsa_warnings_if_linux():
+    with suppress_alsa_warnings_if_linux():
         p = pyaudio.PyAudio()
         try:
             try:
@@ -106,6 +65,7 @@ def get_default_input_device_index() -> int:
     _CACHED_DEVICE_NAME = name
     log.info("🎤 Using input device [%d] %s", idx, name)
     return idx
+
 
 def record_wav(
     filename: str,
@@ -162,6 +122,7 @@ def record_wav(
         wf.setframerate(sample_rate)
         wf.writeframes(b"".join(frames))
 
+
 def amplify_wav(input_filename: str, output_filename: str, factor: float = None) -> str:
     s = cfg.settings
     factor = s.amp_factor if factor is None else factor
@@ -178,9 +139,11 @@ def amplify_wav(input_filename: str, output_filename: str, factor: float = None)
         wf.writeframes(amplified.tobytes())
     return output_filename
 
+
 def _ts() -> str:
     t = time.localtime()
     return time.strftime("%Y%m%d_%H%M%S", t) + f"_{int((time.time()%1)*1000):03d}"
+
 
 def record_and_prepare_chunk(
     basename: str = "chunk",

@@ -4,13 +4,14 @@ from __future__ import annotations
 import time
 
 import config as cfg
-from audio.mic import load_whisper_model, record_and_prepare_chunk
-from audio.speech_recognition import transcribe_audio
+from audio.mic import record_and_prepare_chunk
+from audio.speech_recognition import transcribe_audio, get_cached_model_and_device
+
 
 def main():
     s = cfg.settings
-    model, device, model_size = load_whisper_model()
-    print(f"🧠 Model ready: {model_size} on {device}")
+    model, device = get_cached_model_and_device(None)
+    print(f"🧠 Model ready on {device}")
 
     try:
         while True:
@@ -24,6 +25,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n🛑 Exiting...")
+
 
 if __name__ == "__main__":
     main()

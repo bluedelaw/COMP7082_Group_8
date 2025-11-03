@@ -1,29 +1,24 @@
+# scripts/list_mics_safe.py
+from __future__ import annotations
+
 import pyaudio
+from audio.utils import suppress_alsa_warnings_if_linux
 
-import os
-import sys
-import contextlib
 
-@contextlib.contextmanager
-def suppress_alsa_warnings():
-    """
-    Suppresses ALSA lib warnings to keep logs clean.
-    """
-    stderr_fileno = sys.stderr.fileno()
-    with open(os.devnull, "w") as devnull:
-        old_stderr = os.dup(stderr_fileno)
-        os.dup2(devnull.fileno(), stderr_fileno)
+def main():
+    with suppress_alsa_warnings_if_linux():
+        p = pyaudio.PyAudio()
         try:
-            yield
+            print("Available input devices:")
+            for i in range(p.get_device_count()):
+                info = p.get_device_info_by_index(i)
+                if info.get("maxInputChannels", 0) > 0:
+                    name = info["name"]
+                    rate = int(info.get("defaultSampleRate", 0))
+                    print(f"[{i}] {name} | Default rate: {rate} Hz")
         finally:
-            os.dup2(old_stderr, stderr_fileno)
-            os.close(old_stderr)
+            p.terminate()
 
 
-p = pyaudio.PyAudio()
-print("Available input devices:")
-for i in range(p.get_device_count()):
-    info = p.get_device_info_by_index(i)
-    if info.get("maxInputChannels", 0) > 0:
-        print(f"[{i}] {info['name']} | Default rate: {int(info['defaultSampleRate'])} Hz")
-p.terminate()
+if __name__ == "__main__":
+    main()

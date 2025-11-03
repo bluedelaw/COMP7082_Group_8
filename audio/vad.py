@@ -3,20 +3,20 @@ from __future__ import annotations
 
 import collections
 import logging
-import os
 import sys
 import time
-import wave
 from typing import Callable, Deque, Generator, Optional, Tuple
 
 import numpy as np
 import pyaudio
 
 import config as cfg
-from audio.mic import _suppress_alsa_warnings_if_linux, get_default_input_device_index
+from audio.mic import get_default_input_device_index
+from audio.utils import suppress_alsa_warnings_if_linux, write_wav_int16_mono
 
 Int16 = np.int16
 log = logging.getLogger("jarvin.vad")
+
 
 def _rms_int16(x: np.ndarray) -> float:
     if x.size == 0:
@@ -24,11 +24,13 @@ def _rms_int16(x: np.ndarray) -> float:
     y = x.astype(np.float32)
     return float(np.sqrt(np.mean(y * y)))
 
+
 def _isatty(stream) -> bool:
     try:
         return stream.isatty()
     except Exception:
         return False
+
 
 class _TTYStatus:
     def __init__(self) -> None:
@@ -49,6 +51,7 @@ class _TTYStatus:
         sys.stderr.write("\r\x1b[K")
         sys.stderr.flush()
         self._last_str = ""
+
 
 class NoiseGateVAD:
     def __init__(
@@ -98,7 +101,7 @@ class NoiseGateVAD:
         self._pa = pyaudio.PyAudio()
         if self.device_index is None:
             self.device_index = get_default_input_device_index()
-        with _suppress_alsa_warnings_if_linux():
+        with suppress_alsa_warnings_if_linux():
             try:
                 self._stream = self._pa.open(
                     format=pyaudio.paInt16,
@@ -303,25 +306,5 @@ class NoiseGateVAD:
                     cur = []
 
     @staticmethod
-    def _peak_normalize_int16(x: np.ndarray, target_dbfs: float) -> np.ndarray:
-        if x.size == 0:
-            return x
-        peak = np.max(np.abs(x))
-        if peak == 0:
-            return x
-        target_linear = 32767.0 * (10.0 ** (target_dbfs / 20.0))
-        gain = target_linear / float(peak)
-        y = np.clip(x.astype(np.float32) * gain, -32768.0, 32767.0).astype(np.int16)
-        return y
-
-    @staticmethod
     def write_wav(path: str, pcm: np.ndarray, sample_rate: int, normalize_dbfs: Optional[float]) -> None:
-        y = pcm
-        if normalize_dbfs is not None:
-            y = NoiseGateVAD._peak_normalize_int16(y, normalize_dbfs)
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with wave.open(path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sample_rate)
-            wf.writeframes(y.tobytes())
+        write_wav_int16_mono(path, pcm, sample_rate, normalize_dbfs)

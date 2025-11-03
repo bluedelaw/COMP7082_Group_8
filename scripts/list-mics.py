@@ -2,25 +2,9 @@
 from __future__ import annotations
 
 import sys
-import os
-import contextlib
 import pyaudio
+from audio.utils import suppress_alsa_warnings_if_linux
 
-@contextlib.contextmanager
-def _suppress_alsa_warnings_if_linux():
-    """Silence ALSA warnings on Linux; no-op elsewhere."""
-    if not sys.platform.startswith("linux"):
-        yield
-        return
-    stderr_fileno = sys.stderr.fileno()
-    with open(os.devnull, "w") as devnull:
-        old_stderr = os.dup(stderr_fileno)
-        try:
-            os.dup2(devnull.fileno(), stderr_fileno)
-            yield
-        finally:
-            os.dup2(old_stderr, stderr_fileno)
-            os.close(old_stderr)
 
 def _list_input_devices() -> list[tuple[int, str]]:
     """All input-capable devices: [(index, name)]."""
@@ -34,6 +18,7 @@ def _list_input_devices() -> list[tuple[int, str]]:
     finally:
         p.terminate()
     return devices
+
 
 def list_working_input_devices(rate: int = 16_000, chunk: int = 1024) -> list[tuple[int, str]]:
     """
@@ -55,14 +40,14 @@ def list_working_input_devices(rate: int = 16_000, chunk: int = 1024) -> list[tu
                 stream.close()
                 working.append((idx, name))
             except Exception:
-                # Exists but incompatible with requested params
                 continue
     finally:
         p.terminate()
     return working
 
+
 if __name__ == "__main__":
-    with _suppress_alsa_warnings_if_linux():
+    with suppress_alsa_warnings_if_linux():
         devices = list_working_input_devices()
 
     if not devices:

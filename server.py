@@ -9,24 +9,27 @@ import webbrowser
 from urllib.parse import urlunparse
 
 import uvicorn
+import gradio as gr
+from fastapi.responses import RedirectResponse
 
 import config as cfg
 from backend.logging_setup import init_logging
 from backend.app import create_app as create_fastapi_app
-
-# Gradio + the new UI factory
-import gradio as gr
 from ui.app import create_app as create_gradio_blocks
-from fastapi.responses import RedirectResponse
+
+
+def _set_gradio_env() -> None:
+    s = cfg.settings
+    os.environ["GRADIO_USE_CDN"] = "true" if s.gradio_use_cdn else "false"
+    os.environ["GRADIO_ANALYTICS_ENABLED"] = "true" if s.gradio_analytics_enabled else "false"
 
 
 def build_app_with_ui():
     s = cfg.settings
     init_logging(s.log_level)
-    fastapi_app = create_fastapi_app()
+    _set_gradio_env()
 
-    os.environ["GRADIO_USE_CDN"] = "true" if s.gradio_use_cdn else "false"
-    os.environ["GRADIO_ANALYTICS_ENABLED"] = "true" if s.gradio_analytics_enabled else "false"
+    fastapi_app = create_fastapi_app()
 
     blocks = create_gradio_blocks()
     mount_path = s.gradio_mount_path.rstrip("/") or "/"
@@ -53,6 +56,7 @@ def _open_browser_later(url: str, delay: float) -> None:
             webbrowser.open(url, new=2)
         except Exception:
             pass
+
     t = threading.Thread(target=_worker, name="OpenBrowser", daemon=True)
     t.start()
 
@@ -60,50 +64,28 @@ def _open_browser_later(url: str, delay: float) -> None:
 def main() -> int:
     s = cfg.settings
     init_logging(s.log_level)
-
-    fastapi_app = create_fastapi_app()
-
-    os.environ["GRADIO_USE_CDN"] = "true" if s.gradio_use_cdn else "false"
-    os.environ["GRADIO_ANALYTICS_ENABLED"] = "true" if s.gradio_analytics_enabled else "false"
-
-    blocks = create_gradio_blocks()
-    mount_path = s.gradio_mount_path.rstrip("/") or "/"
-    gr.mount_gradio_app(app=fastapi_app, blocks=blocks, path=mount_path)
-
-    if mount_path != "/":
-        @fastapi_app.get("/")
-        def _root_redirect():
-            return RedirectResponse(url=mount_path, status_code=307)
+    _set_gradio_env()
 
     reload_flag = s.uvicorn_reload_windows if os.name == "nt" else s.uvicorn_reload_others
-
     host = s.server_host
     port = int(s.server_port)
+    mount_path = s.gradio_mount_path.rstrip("/") or "/"
 
     if s.gradio_auto_open:
         url = _browser_url(host, port, mount_path)
         _open_browser_later(url, delay=s.gradio_open_delay_sec)
 
     try:
-        if reload_flag:
-            uvicorn.run(
-                "server:build_app_with_ui",
-                host=host,
-                port=port,
-                reload=True,
-                log_level=s.log_level,
-                factory=True,
-                access_log=s.uvicorn_access_log,
-            )
-        else:
-            uvicorn.run(
-                app=fastapi_app,
-                host=host,
-                port=port,
-                reload=False,
-                log_level=s.log_level,
-                access_log=s.uvicorn_access_log,
-            )
+        # Always run via factory (avoids building app twice and keeps code path uniform)
+        uvicorn.run(
+            "server:build_app_with_ui",
+            host=host,
+            port=port,
+            reload=reload_flag,
+            log_level=s.log_level,
+            factory=True,
+            access_log=s.uvicorn_access_log,
+        )
         return 0
     except KeyboardInterrupt:
         return 0
