@@ -5,11 +5,7 @@ import os
 import wave
 import numpy as np
 
-
 def linear_resample(audio: np.ndarray, src_hz: int, dst_hz: int) -> np.ndarray:
-    """
-    Dependency-free linear resampler. Input: float32 mono in [-1, 1].
-    """
     if src_hz == dst_hz or audio.size == 0:
         return audio.astype(np.float32, copy=False)
     ratio = float(dst_hz) / float(src_hz)
@@ -20,12 +16,7 @@ def linear_resample(audio: np.ndarray, src_hz: int, dst_hz: int) -> np.ndarray:
     y = np.interp(x_new, xp, fp).astype(np.float32, copy=False)
     return y
 
-
 def wav_to_float32_mono_16k(path: str) -> np.ndarray:
-    """
-    Load a WAV into float32 mono @ 16 kHz without ffmpeg.
-    Assumes PCM input; raises on non-16-bit depth.
-    """
     with wave.open(path, "rb") as wf:
         nch = wf.getnchannels()
         sampwidth = wf.getsampwidth()
@@ -36,7 +27,6 @@ def wav_to_float32_mono_16k(path: str) -> np.ndarray:
     if sampwidth != 2:
         raise ValueError(f"Expected 16-bit PCM; got sampwidth={sampwidth}")
 
-    # int16 -> float32 [-1, 1]
     audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
     if nch == 2:
@@ -47,11 +37,7 @@ def wav_to_float32_mono_16k(path: str) -> np.ndarray:
 
     return audio
 
-
 def _peak_normalize_int16(x: np.ndarray, target_dbfs: float) -> np.ndarray:
-    """
-    Peak-normalize int16 PCM to target dBFS. No-op for empty or zero-peak.
-    """
     if x.size == 0:
         return x
     peak = np.max(np.abs(x))
@@ -62,11 +48,7 @@ def _peak_normalize_int16(x: np.ndarray, target_dbfs: float) -> np.ndarray:
     y = np.clip(x.astype(np.float32) * gain, -32768.0, 32767.0).astype(np.int16)
     return y
 
-
 def write_wav_int16_mono(path: str, pcm: np.ndarray, sample_rate: int, normalize_dbfs: float | None = None) -> None:
-    """
-    Write mono int16 PCM WAV. Optional peak normalization in dBFS.
-    """
     y = pcm
     if normalize_dbfs is not None:
         y = _peak_normalize_int16(y, normalize_dbfs)

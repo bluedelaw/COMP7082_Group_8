@@ -7,8 +7,7 @@ from backend.logging_setup import init_logging
 import config as cfg
 from backend.app import create_app
 
-# Initialize logging once, then build the app via factory (clean construction).
-init_logging(cfg.LOG_LEVEL)
+init_logging(cfg.settings.log_level)
 log = logging.getLogger("jarvin")
 
 app = create_app()

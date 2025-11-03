@@ -10,12 +10,8 @@ from backend.llm_model_manager import pick_model, ensure_download, GGUFModelSpec
 log = logging.getLogger("jarvin.llm")
 
 async def provision_llm() -> str | None:
-    """
-    Detect hardware, choose a GGUF spec (currently forced via config),
-    ensure it's present under cfg.MODELS_DIR, and log the result.
-    Returns the absolute model path on success, or None if disabled.
-    """
-    if not cfg.LLM_AUTO_PROVISION:
+    s = cfg.settings
+    if not s.llm_auto_provision:
         log.info("LLM auto-provision disabled.")
         return None
 
@@ -31,7 +27,7 @@ async def provision_llm() -> str | None:
         log.info("📦 LLM spec selected | logical=%s repo=%s file=%s",
                  spec.logical_name, spec.repo_id, spec.filename)
 
-        path = ensure_download(spec, models_dir=cfg.MODELS_DIR)
+        path = ensure_download(spec, models_dir=s.models_dir)
         log.info("✅ LLM model ready | %s", path)
         return path
     except Exception as e:

@@ -19,21 +19,17 @@ log = logging.getLogger("jarvin.routes.transcription")
 
 router = APIRouter(tags=["transcription"])
 
-
 @router.post("/transcribe", response_model=TranscribeResponse | ErrorResponse)
 async def transcribe_endpoint(audio_file: UploadFile = File(...)) -> TranscribeResponse | ErrorResponse:
-    """
-    One-off transcription with basic validation and safe temp handling.
-    """
     ctype = (audio_file.content_type or "").lower()
     if not (ctype.startswith("audio/") or ctype in {"", "application/octet-stream"}):
         return ErrorResponse(error=f"unsupported content type: {audio_file.content_type}")
 
     guessed_ext = mimetypes.guess_extension(ctype) or ".wav"
 
-    os.makedirs(cfg.TEMP_DIR, exist_ok=True)
+    os.makedirs(cfg.settings.temp_dir, exist_ok=True)
     tmp_name = f"up_{uuid.uuid4().hex}{guessed_ext}"
-    file_location = os.path.join(cfg.TEMP_DIR, tmp_name)
+    file_location = os.path.join(cfg.settings.temp_dir, tmp_name)
 
     MAX_BYTES = 50 * 1024 * 1024  # 50 MB
     data = await audio_file.read()

@@ -21,14 +21,15 @@ from fastapi.responses import RedirectResponse
 
 
 def build_app_with_ui():
-    init_logging(cfg.LOG_LEVEL)
+    s = cfg.settings
+    init_logging(s.log_level)
     fastapi_app = create_fastapi_app()
 
-    os.environ["GRADIO_USE_CDN"] = "true" if cfg.GRADIO_USE_CDN else "false"
-    os.environ["GRADIO_ANALYTICS_ENABLED"] = "true" if cfg.GRADIO_ANALYTICS_ENABLED else "false"
+    os.environ["GRADIO_USE_CDN"] = "true" if s.gradio_use_cdn else "false"
+    os.environ["GRADIO_ANALYTICS_ENABLED"] = "true" if s.gradio_analytics_enabled else "false"
 
     blocks = create_gradio_blocks()
-    mount_path = cfg.GRADIO_MOUNT_PATH.rstrip("/") or "/"
+    mount_path = s.gradio_mount_path.rstrip("/") or "/"
     gr.mount_gradio_app(app=fastapi_app, blocks=blocks, path=mount_path)
 
     if mount_path != "/":
@@ -39,10 +40,6 @@ def build_app_with_ui():
 
 
 def _browser_url(host: str, port: int, path: str) -> str:
-    """
-    Build a http:// URL for the local browser. If the server binds to 0.0.0.0,
-    use 127.0.0.1 for the client-side URL.
-    """
     client_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     netloc = f"{client_host}:{port}"
     p = path if path.startswith("/") else f"/{path}"
@@ -61,18 +58,16 @@ def _open_browser_later(url: str, delay: float) -> None:
 
 
 def main() -> int:
-    init_logging(cfg.LOG_LEVEL)
+    s = cfg.settings
+    init_logging(s.log_level)
 
-    # Build FastAPI
     fastapi_app = create_fastapi_app()
 
-    # Gradio environment settings
-    os.environ["GRADIO_USE_CDN"] = "true" if cfg.GRADIO_USE_CDN else "false"
-    os.environ["GRADIO_ANALYTICS_ENABLED"] = "true" if cfg.GRADIO_ANALYTICS_ENABLED else "false"
+    os.environ["GRADIO_USE_CDN"] = "true" if s.gradio_use_cdn else "false"
+    os.environ["GRADIO_ANALYTICS_ENABLED"] = "true" if s.gradio_analytics_enabled else "false"
 
-    # Mount Gradio UI
     blocks = create_gradio_blocks()
-    mount_path = cfg.GRADIO_MOUNT_PATH.rstrip("/") or "/"
+    mount_path = s.gradio_mount_path.rstrip("/") or "/"
     gr.mount_gradio_app(app=fastapi_app, blocks=blocks, path=mount_path)
 
     if mount_path != "/":
@@ -80,16 +75,14 @@ def main() -> int:
         def _root_redirect():
             return RedirectResponse(url=mount_path, status_code=307)
 
-    # Reload flag
-    reload_flag = cfg.UVICORN_RELOAD_WINDOWS if os.name == "nt" else cfg.UVICORN_RELOAD_OTHERS
+    reload_flag = s.uvicorn_reload_windows if os.name == "nt" else s.uvicorn_reload_others
 
-    host = cfg.SERVER_HOST
-    port = int(cfg.SERVER_PORT)
+    host = s.server_host
+    port = int(s.server_port)
 
-    # Auto-open UI
-    if cfg.GRADIO_AUTO_OPEN:
+    if s.gradio_auto_open:
         url = _browser_url(host, port, mount_path)
-        _open_browser_later(url, delay=cfg.GRADIO_OPEN_DELAY_SEC)
+        _open_browser_later(url, delay=s.gradio_open_delay_sec)
 
     try:
         if reload_flag:
@@ -98,9 +91,9 @@ def main() -> int:
                 host=host,
                 port=port,
                 reload=True,
-                log_level=cfg.LOG_LEVEL,
+                log_level=s.log_level,
                 factory=True,
-                access_log=cfg.UVICORN_ACCESS_LOG,
+                access_log=s.uvicorn_access_log,
             )
         else:
             uvicorn.run(
@@ -108,8 +101,8 @@ def main() -> int:
                 host=host,
                 port=port,
                 reload=False,
-                log_level=cfg.LOG_LEVEL,
-                access_log=cfg.UVICORN_ACCESS_LOG,
+                log_level=s.log_level,
+                access_log=s.uvicorn_access_log,
             )
         return 0
     except KeyboardInterrupt:
