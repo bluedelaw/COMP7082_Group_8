@@ -1,59 +1,32 @@
-# audio/vad.py
+# audio/vad/detector.py
 from __future__ import annotations
 
 import collections
 import logging
-import sys
 import time
 from typing import Callable, Deque, Generator, Optional, Tuple
 
 import numpy as np
-import pyaudio
 
 import config as cfg
-from audio.mic import get_default_input_device_index
-from audio.utils import suppress_alsa_warnings_if_linux, write_wav_int16_mono
+from .stream import MicStream
+from .utils import TTYStatus, rms_int16, clamp_floor, ema, threshold, write_wav
 
-Int16 = np.int16
 log = logging.getLogger("jarvin.vad")
 
 
-def _rms_int16(x: np.ndarray) -> float:
-    if x.size == 0:
-        return 0.0
-    y = x.astype(np.float32)
-    return float(np.sqrt(np.mean(y * y)))
-
-
-def _isatty(stream) -> bool:
-    try:
-        return stream.isatty()
-    except Exception:
-        return False
-
-
-class _TTYStatus:
-    def __init__(self) -> None:
-        s = cfg.settings
-        self.enabled = s.vad_tty_status and _isatty(sys.stderr)
-        self._last_str = ""
-
-    def update(self, s: str) -> None:
-        if not self.enabled or s == self._last_str:
-            return
-        sys.stderr.write("\r" + s + "\x1b[K")
-        sys.stderr.flush()
-        self._last_str = s
-
-    def clear(self) -> None:
-        if not self.enabled:
-            return
-        sys.stderr.write("\r\x1b[K")
-        sys.stderr.flush()
-        self._last_str = ""
-
-
 class NoiseGateVAD:
+    """
+    Adaptive noise-gate VAD with attack/release/hangover. Emits utterance
+    chunks as (pcm_int16, sample_rate).
+
+    Public API:
+      - context manager (__enter__/__exit__), open/close/request_stop
+      - calibrate(seconds: float | None)
+      - utterances() -> Generator[(np.ndarray, int)]
+      - write_wav(path, pcm, sample_rate, normalize_dbfs)  # static
+    """
+
     def __init__(
         self,
         sample_rate: int = None,
@@ -62,27 +35,32 @@ class NoiseGateVAD:
         on_recording: Optional[Callable[[bool], None]] = None,
     ) -> None:
         s = cfg.settings
-        self.sample_rate = s.sample_rate if sample_rate is None else sample_rate
-        self.chunk = s.chunk if chunk is None else chunk
+        self.sample_rate = s.sample_rate if sample_rate is None else int(sample_rate)
+        self.chunk = s.chunk if chunk is None else int(chunk)
         self.device_index = device_index
-        self._pa: Optional[pyaudio.PyAudio] = None
-        self._stream: Optional[pyaudio.Stream] = None
+        self._mic = MicStream(self.sample_rate, self.chunk, device_index=self.device_index)
 
-        self._last_heartbeat_ts = 0.0
-        self._last_thr_log_ts = 0.0
-        self._frame_idx = 0
         self._stop_requested = False
-        self._status = _TTYStatus()
+        self._status = TTYStatus()
 
+        # Frame timing
         self.frame_ms = int((self.chunk / self.sample_rate) * 1000)
         self.alpha_floor = 0.98
         self.alpha_env = 0.85
 
+        # Adaptive state
         self.floor_rms = 50.0
         self.env_rms = 0.0
 
+        # Counters / logs
+        self._frame_idx = 0
+        self._last_heartbeat_ts = 0.0
+        self._last_thr_log_ts = 0.0
+
+        # Callback
         self._on_recording = on_recording
 
+    # ---------- Lifecycle ----------
     def __enter__(self) -> "NoiseGateVAD":
         self.open()
         self._notify_recording(False)
@@ -96,77 +74,18 @@ class NoiseGateVAD:
         return False
 
     def open(self) -> None:
-        if self._pa:
-            return
-        self._pa = pyaudio.PyAudio()
-        if self.device_index is None:
-            self.device_index = get_default_input_device_index()
-        with suppress_alsa_warnings_if_linux():
-            try:
-                self._stream = self._pa.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=self.sample_rate,
-                    input=True,
-                    frames_per_buffer=self.chunk,
-                    input_device_index=self.device_index,
-                )
-            except OSError:
-                self._stream = self._pa.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=self.sample_rate,
-                    input=True,
-                    frames_per_buffer=self.chunk,
-                )
+        self._mic.open()
 
     def request_stop(self) -> None:
         self._stop_requested = True
-        try:
-            if self._stream and self._stream.is_active():
-                self._stream.stop_stream()
-        except Exception:
-            pass
+        self._mic.stop()
 
     def close(self) -> None:
         try:
             self._status.clear()
         except Exception:
             pass
-        try:
-            if self._stream:
-                try:
-                    if self._stream.is_active():
-                        self._stream.stop_stream()
-                except Exception:
-                    pass
-                self._stream.close()
-        finally:
-            self._stream = None
-            if self._pa:
-                self._pa.terminate()
-                self._pa = None
-
-    def _read_frame(self) -> np.ndarray:
-        if self._stop_requested:
-            raise StopIteration
-        assert self._stream is not None
-        data = self._stream.read(self.chunk, exception_on_overflow=False)
-        if self._stop_requested:
-            raise StopIteration
-        return np.frombuffer(data, dtype=np.int16)
-
-    @staticmethod
-    def _clamp_floor(x: float) -> float:
-        s = cfg.settings
-        return max(s.vad_floor_min, min(s.vad_floor_max, x))
-
-    def _update_ema(self, value: float, ema: float, alpha: float) -> float:
-        return (alpha * ema) + ((1.0 - alpha) * value)
-
-    def _threshold(self) -> float:
-        s = cfg.settings
-        return max(s.vad_threshold_abs, self.floor_rms * s.vad_threshold_mult)
+        self._mic.close()
 
     def _notify_recording(self, flag: bool) -> None:
         try:
@@ -175,6 +94,15 @@ class NoiseGateVAD:
         except Exception:
             pass
 
+    def _read_frame(self) -> np.ndarray:
+        if self._stop_requested:
+            raise StopIteration
+        arr = self._mic.read_frame()
+        if self._stop_requested:
+            raise StopIteration
+        return arr
+
+    # ---------- Calibration ----------
     def calibrate(self, seconds: float = None) -> None:
         s = cfg.settings
         seconds = s.vad_calibration_sec if seconds is None else seconds
@@ -182,16 +110,19 @@ class NoiseGateVAD:
         floors = []
         for _ in range(n_frames):
             frame = self._read_frame()
-            floors.append(_rms_int16(frame))
+            floors.append(rms_int16(frame))
         base = float(np.percentile(floors, 10))
-        self.floor_rms = self._clamp_floor(base)
+        self.floor_rms = clamp_floor(base)
         self.env_rms = self.floor_rms
         if cfg.settings.vad_log_transitions:
             p90 = float(np.percentile(floors, 90))
             p10 = float(np.percentile(floors, 10))
-            log.info("📉 VAD calibrated | floor=%.1f RMS (p10=%.1f, p90=%.1f) thr≈%.1f",
-                     self.floor_rms, p10, p90, self._threshold())
+            log.info(
+                "📉 VAD calibrated | floor=%.1f RMS (p10=%.1f, p90=%.1f) thr≈%.1f",
+                self.floor_rms, p10, p90, threshold(self.floor_rms),
+            )
 
+    # ---------- Streaming ----------
     def utterances(self) -> Generator[Tuple[np.ndarray, int], None, None]:
         s = cfg.settings
         pre_frames = max(0, int(s.vad_pre_roll_ms / self.frame_ms))
@@ -216,28 +147,33 @@ class NoiseGateVAD:
             self._frame_idx += 1
             prebuf.append(frame)
 
-            r_inst = _rms_int16(frame)
-            prev_thr = self._threshold()
-            self.env_rms = self._update_ema(r_inst, self.env_rms, self.alpha_env)
+            r_inst = rms_int16(frame)
+            prev_thr = threshold(self.floor_rms)
+            self.env_rms = ema(r_inst, self.env_rms, self.alpha_env)
 
-            thr = self._threshold()
+            thr = threshold(self.floor_rms)
             is_above = (r_inst >= thr) if s.vad_use_instant_rms_for_trigger else (self.env_rms >= thr)
 
+            # idle floor tracking
             if not in_speech and r_inst < (s.vad_floor_adapt_margin * thr):
-                new_floor = self._update_ema(r_inst, self.floor_rms, self.alpha_floor)
-                self.floor_rms = self._clamp_floor(new_floor)
+                new_floor = ema(r_inst, self.floor_rms, self.alpha_floor)
+                self.floor_rms = clamp_floor(new_floor)
                 now = time.time()
                 if s.vad_log_threshold_changes_ms > 0 and (now - self._last_thr_log_ts) * 1000 >= s.vad_log_threshold_changes_ms:
                     if abs(thr - prev_thr) >= 1.0:
                         log.info("↘️  idle | floor=%.1f env=%.1f thr≈%.1f", self.floor_rms, self.env_rms, thr)
                         self._last_thr_log_ts = now
 
+            # optional debug stats
             n = s.vad_log_stats_every_n_frames
             if n and (self._frame_idx % n == 0):
-                log.debug("frame=%d | r=%.1f env=%.1f floor=%.1f thr≈%.1f %s",
-                          self._frame_idx, r_inst, self.env_rms, self.floor_rms, thr,
-                          "ABOVE" if is_above else "below")
+                log.debug(
+                    "frame=%d | r=%.1f env=%.1f floor=%.1f thr≈%.1f %s",
+                    self._frame_idx, r_inst, self.env_rms, self.floor_rms, thr,
+                    "ABOVE" if is_above else "below",
+                )
 
+            # heartbeat while waiting
             if not in_speech and s.vad_heartbeat_ms > 0:
                 now = time.time()
                 if (now - self._last_heartbeat_ts) * 1000 >= s.vad_heartbeat_ms:
@@ -246,6 +182,7 @@ class NoiseGateVAD:
                     )
                     self._last_heartbeat_ts = now
 
+            # state machine
             if not in_speech:
                 above_cnt = above_cnt + 1 if is_above else 0
                 if above_cnt >= attack_needed:
@@ -257,8 +194,10 @@ class NoiseGateVAD:
                     below_cnt = 0
                     if s.vad_log_transitions:
                         self._status.clear()
-                        log.info("▶️  START | r=%.1f ≥ thr≈%.1f | attack=%d frames | pre_roll=%d frames",
-                                 r_inst, thr, attack_needed, len(prebuf))
+                        log.info(
+                            "▶️  START | r=%.1f ≥ thr≈%.1f | attack=%d frames | pre_roll=%d frames",
+                            r_inst, thr, attack_needed, len(prebuf),
+                        )
                     continue
             else:
                 cur.append(frame)
@@ -283,13 +222,15 @@ class NoiseGateVAD:
 
                     if s.vad_log_transitions:
                         try:
-                            avg_rms = float(np.mean([_rms_int16(f) for f in cur]))
+                            avg_rms = float(np.mean([rms_int16(f) for f in cur]))
                             peak = int(np.max(np.abs(pcm))) if pcm.size else 0
                         except Exception:
                             avg_rms, peak = 0.0, 0
                         self._status.clear()
-                        log.info("⏹ END  | %s | dur=%.0f ms frames=%d avgRMS=%.1f peak=%d thr≈%.1f",
-                                 stop_reason, utt_ms, len(cur), avg_rms, peak, thr)
+                        log.info(
+                            "⏹ END  | %s | dur=%.0f ms frames=%d avgRMS=%.1f peak=%d thr≈%.1f",
+                            stop_reason, utt_ms, len(cur), avg_rms, peak, thr
+                        )
 
                     self._notify_recording(False)
 
@@ -305,6 +246,7 @@ class NoiseGateVAD:
                     hangover = 0
                     cur = []
 
+    # ----- static passthrough for callers -----
     @staticmethod
     def write_wav(path: str, pcm: np.ndarray, sample_rate: int, normalize_dbfs: Optional[float]) -> None:
-        write_wav_int16_mono(path, pcm, sample_rate, normalize_dbfs)
+        write_wav(path, pcm, sample_rate, normalize_dbfs)

@@ -16,6 +16,7 @@ from backend.ai_engine import generate_reply, JarvinConfig
 from backend.intent import intent_shutdown, intent_confirm, CONFIRM_WINDOW_SEC
 from backend.util.paths import temp_path
 from backend.live_state import set_snapshot, set_status
+from audio.vad.utils import threshold as vad_threshold
 
 log = logging.getLogger("jarvin")
 
@@ -81,7 +82,7 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
             log.info("⚙️  Calibrating noise floor for %.1fs…", s.vad_calibration_sec)
 
             await asyncio.to_thread(vad.calibrate, s.vad_calibration_sec)
-            log.info("📉 Initial floor RMS=%.1f, threshold≈%.1f", vad.floor_rms, vad._threshold())
+            log.info("📉 Initial floor RMS=%.1f, threshold≈%.1f", vad.floor_rms, vad_threshold(vad.floor_rms))  # <-- CHANGED
 
             utter_gen = vad.utterances()
             while not stop_event.is_set():
