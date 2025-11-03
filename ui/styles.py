@@ -1,3 +1,5 @@
+# ui/styles.py
+
 CSS = """
 /* ---- Base theme ---- */
 body {
