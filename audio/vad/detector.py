@@ -10,7 +10,8 @@ import numpy as np
 
 import config as cfg
 from .stream import MicStream
-from .utils import TTYStatus, rms_int16, clamp_floor, ema, threshold, write_wav
+from .utils import TTYStatus, rms_int16, clamp_floor, ema, threshold
+from audio.wav_io import write_wav_int16_mono as write_wav
 
 log = logging.getLogger("jarvin.vad")
 

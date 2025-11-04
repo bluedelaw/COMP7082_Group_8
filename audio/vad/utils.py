@@ -7,8 +7,7 @@ from typing import Optional
 import numpy as np
 
 import config as cfg
-from audio.utils import write_wav_int16_mono as _write_wav_int16_mono
-
+from audio.wav_io import write_wav_int16_mono as _write_wav_int16_mono
 
 def rms_int16(x: np.ndarray) -> float:
     if x.size == 0:

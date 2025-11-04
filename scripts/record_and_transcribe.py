@@ -5,7 +5,7 @@ import time
 
 import config as cfg
 from audio.mic import record_and_prepare_chunk
-from audio.speech_recognition import transcribe_audio, get_cached_model_and_device
+from backend.asr.whisper import transcribe_audio, _get_model_and_device as get_cached_model_and_device
 
 
 def main():

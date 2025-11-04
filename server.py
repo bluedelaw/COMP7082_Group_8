@@ -26,7 +26,6 @@ def _set_gradio_env() -> None:
 
 def build_app_with_ui():
     s = cfg.settings
-    init_logging(s.log_level)
     _set_gradio_env()
 
     fastapi_app = create_fastapi_app()

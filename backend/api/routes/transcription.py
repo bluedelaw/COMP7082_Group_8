@@ -9,11 +9,12 @@ import logging
 from fastapi import APIRouter, UploadFile, File
 
 import config as cfg
-from audio.speech_recognition import transcribe_audio
+from backend.asr.whisper import transcribe_audio
 from backend.api.schemas import (
     TranscribeResponse,
     ErrorResponse,
  )
+from backend.util.paths import ensure_temp_dir
 
 log = logging.getLogger("jarvin.routes.transcription")
 
@@ -27,9 +28,8 @@ async def transcribe_endpoint(audio_file: UploadFile = File(...)) -> TranscribeR
 
     guessed_ext = mimetypes.guess_extension(ctype) or ".wav"
 
-    os.makedirs(cfg.settings.temp_dir, exist_ok=True)
-    tmp_name = f"up_{uuid.uuid4().hex}{guessed_ext}"
-    file_location = os.path.join(cfg.settings.temp_dir, tmp_name)
+    root = ensure_temp_dir()
+    file_location = os.path.join(root, f"up_{uuid.uuid4().hex}{guessed_ext}")
 
     MAX_BYTES = 50 * 1024 * 1024  # 50 MB
     data = await audio_file.read()

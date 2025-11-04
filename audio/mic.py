@@ -11,6 +11,7 @@ import numpy as np
 import pyaudio
 
 import config as cfg
+from backend.util.paths import ensure_temp_dir
 from audio.utils import suppress_alsa_warnings_if_linux
 
 log = logging.getLogger("jarvin.mic")
@@ -25,7 +26,7 @@ def ensure_dir(path: str) -> None:
 
 def ensure_temp() -> None:
     os.makedirs(cfg.settings.temp_dir, exist_ok=True)
-
+    ensure_temp_dir()
 
 def list_input_devices() -> List[Tuple[int, str]]:  # type: ignore[name-defined]
     devices: List[Tuple[int, str]] = []
