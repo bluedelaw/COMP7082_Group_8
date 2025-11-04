@@ -122,6 +122,21 @@ class Settings(BaseSettings):
         vv = str(v).lower().strip()
         return vv if vv in {"debug", "info", "warning", "error", "critical"} else "info"  # type: ignore[return-value]
 
+    @field_validator("whisper_model_size", mode="before")
+    @classmethod
+    def _validate_whisper_size(cls, v: str | None) -> Optional[str]:
+        """
+        Accept None / "" → None, else enforce known sizes:
+        tiny | base | small | medium | large
+        """
+        if v is None:
+            return None
+        vv = str(v).strip().lower()
+        if vv in {"", "none", "auto"}:
+            return None
+        allowed = {"tiny", "base", "small", "medium", "large"}
+        return vv if vv in allowed else "small"  # safe default
+
 
 # Single global instance
 settings = Settings()
