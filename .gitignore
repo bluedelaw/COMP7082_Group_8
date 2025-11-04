@@ -1,11 +1,11 @@
-# Bytecode / caches
+# Bytecode / caches / builds
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 *.egg-info/
-.build/
-.dist/
+build/
+dist/
 
 # Virtualenvs
 .venv/

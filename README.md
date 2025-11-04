@@ -1,18 +1,16 @@
 # Jarvin AI Assistant
 
-Local, privacy-first voice assistant inspired by J.A.R.V.I.S. It runs entirely on your machine: listens, transcribes speech with Whisper, and generates replies with a local LLM. No cloud APIs required.
+Local, privacy-first voice assistant inspired by J.A.R.V.I.S. It runs entirely on your machine: listens, transcribes speech with Whisper, and generates replies using a local LLM (via llama-cpp-python). No cloud APIs required.
 
 ---
 
 ## ✨ Features
 
-- **Fully offline**: STT (Whisper) + LLM run locally
-- **Voice interaction**: mic capture with PyAudio
-- **Pluggable LLM backends**:
-  - **Ollama** (default; easiest on Windows/macOS/Linux)
-  - **llama.cpp** in-process (optional; advanced)
-- **FastAPI service** + optional Gradio UI
-- **Clean logging & graceful shutdowns**
+- **Fully offline**: mic → VAD/noise-gate → Whisper STT → local LLM
+- **Adaptive VAD** (attack/release/hangover, pre-roll, floor tracking)
+- **FastAPI service** with a mounted **Gradio** UI (`/ui`)
+- **Auto-provision** of a GGUF model from Hugging Face (configurable)
+- Clean logging & graceful shutdowns
 
 > Wake word and TTS (Piper) are planned but not enabled yet.
 
@@ -22,11 +20,9 @@ Local, privacy-first voice assistant inspired by J.A.R.V.I.S. It runs entirely o
 
 - **Backend**: FastAPI, Uvicorn  
 - **Speech-to-Text**: OpenAI Whisper (PyTorch)
-- **LLM**:  
-  - Default: **Ollama** models (e.g. `phi3:mini`, `mistral`, `llama3`)  
-  - Optional: **GGUF** models via `llama-cpp-python`
+- **LLM**: GGUF models via `llama-cpp-python`
 - **Mic capture**: PyAudio  
-- **Frontend (optional)**: Gradio
+- **Frontend (optional)**: Gradio mounted into FastAPI
 
 ---
 
@@ -36,8 +32,13 @@ Local, privacy-first voice assistant inspired by J.A.R.V.I.S. It runs entirely o
 audio/
   mic.py
   speech_recognition.py
+  vad/
+    detector.py
+    stream.py
+    utils.py
 backend/
   ai_engine.py
+  audio_loop.py
   hw_detect.py
   listener.py
   llm_bootstrap.py
@@ -45,93 +46,94 @@ backend/
   llm_runtime.py
   logging_setup.py
   main.py
-frontend.py
-models/                 # GGUF models for llama.cpp backend (not needed for Ollama)
-scripts/
-  record_and_transcribe.py
-temp/                   # ephemeral audio chunks
+  routes/
+    chat.py
+    control.py
+    health.py
+    live.py
+    transcription.py
+  schemas.py
 config.py
 requirements.txt
 server.py
+scripts/
+  record_and_transcribe.py
+  list-mics.py
+ui/
+  app.py
+  api.py
+  poller.py
+  styles.py
+models/                 # GGUF models (auto-provisioned here)
+temp/                   # ephemeral audio chunks
 README.md
 .python-version
+pyproject.toml
 ```
-
----
 
 ## ⚙️ Configuration
 
-Edit `config.py`. Key flags:
+Edit `config.py` or override via env vars (prefix **`JARVIN_`**). Examples:
 
-```python
-# Select backend: "ollama" (default) or "llama_cpp"
-LLM_BACKEND: str = "ollama"
-
-# --- Ollama settings (default path) ---
-OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
-OLLAMA_MODEL: str = "phi3:mini"     # try "mistral" or "llama3" later
-OLLAMA_TEMPERATURE: float = 0.7
-OLLAMA_NUM_PREDICT: int = 256
-
-# --- llama.cpp path (optional advanced backend) ---
-MODELS_DIR: str = "models"          # where GGUFs live
-LLM_AUTO_PROVISION: bool = True     # auto-download GGUFs when using llama_cpp
-LLM_FORCE_LOGICAL_NAME: str = "phi-3-mini-4k-instruct"
-LLM_FLAT_LAYOUT: bool = True
-LLM_CLEAN_VENDOR_DIRS: bool = True
+```bash
+# Server / UI
+JARVIN_SERVER_HOST=0.0.0.0
+JARVIN_SERVER_PORT=8000
+JARVIN_GRADIO_AUTO_OPEN=true
+JARVIN_GRADIO_OPEN_DELAY_SEC=1.0
 
 # Audio
-SAMPLE_RATE = 16_000
-RECORD_SECONDS = 5
-AMP_FACTOR = 10.0
+JARVIN_SAMPLE_RATE=16000
+JARVIN_RECORD_SECONDS=5
+JARVIN_AMP_FACTOR=10.0
 
-# Server / logging
-LOG_LEVEL = "info"
+# VAD
+JARVIN_VAD_CALIBRATION_SEC=1.5
+JARVIN_VAD_THRESHOLD_MULT=3.0
+JARVIN_VAD_THRESHOLD_ABS=200
+
+# LLM (llama.cpp)
+JARVIN_MODELS_DIR=models
+JARVIN_LLM_AUTO_PROVISION=true
+JARVIN_LLM_FORCE_LOGICAL_NAME=phi-3-mini-4k-instruct
+JARVIN_LLM_FLAT_LAYOUT=true
+JARVIN_LLM_CLEAN_VENDOR_DIRS=true
+
+# Optional tuning
+JARVIN_LLM_N_THREADS=8
+JARVIN_LLM_N_GPU_LAYERS=0   # CPU-only by default
 ```
 
 ---
 
-## 🚀 Quick Start (Recommended: Ollama)
+## 🚀 Quick Start
 
-1. **Install Python deps**
+1) **Install dependencies**
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+    pip install -r requirements.txt
 
-1. **Install Ollama**
+    If `llama-cpp-python` fails to build on Windows, install it via Conda first:
+    conda install -c conda-forge llama-cpp-python
 
-   - Windows (winget):
+2) **(Optional) Editable install**  
+   Lets you import `backend`, `audio`, and `ui` from anywhere while developing.
 
-     ```powershell
-     winget install Ollama.Ollama
-     ```
+    python -m pip install -e .
 
-   - Or download from [Ollama](https://ollama.com)
+3) **Run the server (FastAPI + Gradio UI)**
 
-1. **Start Ollama service** (in a separate terminal)
+    python server.py
 
-   ```bash
-   ollama serve
-   ```
+    API base: `http://127.0.0.1:8000`
+    UI:       `http://127.0.0.1:8000/ui`   (auto-opens if JARVIN_GRADIO_AUTO_OPEN=true)
 
-1. **Pull a small model (CPU-friendly)**
+4) **Talk**  
+   Jarvin auto-calibrates the mic, records short utterances, runs Whisper → LLM, and shows transcript & reply in the UI.
 
-   ```bash
-   ollama pull phi3:mini
-   ```
-
-   > You can try others later: `ollama pull mistral`, `ollama pull llama3`  
-   > If you change the model, update `OLLAMA_MODEL` in `config.py`.
-
-1. **Run Jarvin**
-
-   ```bash
-   python server.py
-   ```
-
-1. **Talk!**  
-   The listener records short chunks, transcribes with Whisper, and sends the text to your local LLM. Replies are logged.
+    Tips:
+      - Check OS microphone permissions if nothing is captured.
+      - Env overrides use the JARVIN_prefix (e.g., JARVIN_LOG_LEVEL=debug).
+      - First run may auto-download a GGUF model into models/.
 
 ---
 
@@ -145,118 +147,66 @@ python scripts/record_and_transcribe.py
 
 ---
 
-## 🖥️ Optional UI (Gradio)
-
-Launch the simple demo UI:
-
-```bash
-python frontend.py
-```
-
----
-
-## 🔧 Optional: In-Process LLM via llama.cpp (Advanced)
-
-This runs the model inside your Python process using `llama-cpp-python`. On Windows this can involve native builds.
-
-1. **Switch backend**
-
-   ```python
-   # config.py
-   LLM_BACKEND = "llama_cpp"
-   ```
-
-1. **Install llama-cpp-python**
-
-   - **Conda (recommended on Windows)**:
-
-     ```bash
-     conda install -c conda-forge llama-cpp-python
-     ```
-
-   > **Note:** Using pip often requires CMake + MSVC to build from source.
-
-1. **Run the server** to auto-provision a GGUF into `models/`:
-
-   ```bash
-   python server.py
-   ```
-
-   > To select a different GGUF, adjust `LLM_FORCE_LOGICAL_NAME` or the registry in `backend/llm_model_manager.py`.
-
----
-
 ## 🧰 Troubleshooting
 
 ### Whisper / PyTorch
 
-- We pin `torch==2.0.1`. For CPU-only wheels or newer CUDA stacks, reinstall from the official index or:
+We pin `torch==2.0.1`. For CPU-only wheels or newer CUDA stacks, reinstall from the official index:
 
-  ```bash
-  pip install --upgrade --force-reinstall torch --index-url https://download.pytorch.org/whl/cpu
-  ```
+```bash
+pip install --upgrade --force-reinstall torch --index-url https://download.pytorch.org/whl/cpu
+```
 
 ### Microphone (PyAudio)
 
-- Check Windows **Privacy & security → Microphone** permissions.
-- If “No input devices found”, verify the device in Sound Settings.
-- If transcripts are empty, lower `RECORD_SECONDS`, tweak `AMP_FACTOR`, and ensure your mic level is adequate.
+- Check Windows **Privacy & security → Microphone** permissions.  
+- If “No input devices found”, verify the device in Sound Settings.  
+- If transcripts are empty, lower `RECORD_SECONDS`, tweak `AMP_FACTOR`, and ensure mic levels are adequate.
 
 ### ffmpeg errors
 
-- The live loop **no longer calls ffmpeg** (we feed raw PCM).  
-  If you still see ffmpeg errors, confirm your `audio/speech_recognition.py` matches the current version.
+- The live loop **does not call ffmpeg** (raw PCM).  
+- If you still see ffmpeg errors, confirm your `audio/speech_recognition.py` matches the current version.
 
-### Ollama connection
+## llama.cpp on Windows
 
-- Make sure the service is up:
-
-  ```bash
-  ollama serve
-  curl http://127.0.0.1:11434/api/tags
-  ```
-
-- Ensure `OLLAMA_BASE_URL` matches.
-
-### llama-cpp on Windows
-
-- Prefer Conda binaries to avoid compiling.
-- If compiled and slow, ensure it’s a CPU build (no GPU expected on this laptop) and that `n_threads` is sensible (auto by default).
+- Prefer **Conda** binaries to avoid compiling `llama-cpp-python`.  
+- If you compiled and it's slow, ensure it’s a **CPU build** (no GPU expected on this laptop) and that `n_threads` is sensible (auto by default).
 
 ---
 
 ## 🔒 Privacy
 
 All audio and text stay on your machine. No external AI APIs are called during normal operation.  
-(Models are fetched once from Ollama’s registry or Hugging Face during setup.)
+(Models are fetched once from Hugging Face during setup if auto-provision is enabled.)
 
 ---
 
 ## 📜 API & Scripts
 
+## **HTTP API**
+
+- `GET /healthz` – liveness/readiness probe  
+- `GET /status` – background listener status  
+- `POST /start` / `POST /stop` – control the background listener  
+- `POST /shutdown` – terminate FastAPI + UI process (graceful)  
+- `GET /live` – latest transcript/reply + flags (`recording`, `processing`) and timing  
 - `POST /transcribe` – one-off file transcription (multipart upload)  
-- `POST /start`, `POST /stop`, `GET /status` – control the background listener  
-- `scripts/record_and_transcribe.py` – CLI loop for quick testing
+- `POST /chat` – stateless chat via local LLM
+
+## **Scripts**
+
+- `scripts/record_and_transcribe.py` – CLI loop for quick ASR testing  
+- `scripts/list-mics.py` – list working input devices at 16 kHz mono  
+- `scripts/list_mics_safe.py` – enumerate input devices without opening streams
 
 ---
 
 ## 🗺️ Roadmap
 
-- Wake word detection (Porcupine)  
+- Voice Identity / Recognition
 - Piper-TTS voice responses  
 - Conversation memory & skills  
 - Hot-swap LLM model at runtime
 
 ---
-
-## 🤝 Contributing
-
-- Use Python 3.11 (see `.python-version`)  
-- Keep PRs small and focused  
-- Add helpful logs; avoid noisy tracebacks on shutdown
-
----
-
-## 📄 License
-
-MIT (or your preferred license)

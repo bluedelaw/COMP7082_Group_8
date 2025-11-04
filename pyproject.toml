@@ -14,5 +14,5 @@ authors = [{ name = "Jarvin Team" }]
 # Keep using `pip install -r requirements.txt` for runtime deps.
 
 [tool.setuptools.packages.find]
-include = ["backend", "audio"]
-exclude = ["scripts"]
+include = ["backend", "audio", "ui", "memory"]
+exclude = ["scripts", "models", "temp"]
