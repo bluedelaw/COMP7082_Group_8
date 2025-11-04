@@ -55,7 +55,29 @@ def _load_llama() -> Optional["Llama"]:
 
         n_threads_env = os.getenv("JARVIN_LLM_N_THREADS")
         n_threads = int(n_threads_env) if n_threads_env and n_threads_env.isdigit() else None
-        n_gpu_layers = _env_int("JARVIN_LLM_N_GPU_LAYERS", 0)
+
+        llm_use_gpu = cfg.settings.llm_use_gpu
+        n_gpu_layers = 0
+        gpu_message = "GPU not used"
+
+        if llm_use_gpu is True or llm_use_gpu is None:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    total_vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+                    # Heuristic: ~0.75 GB per layer
+                    n_gpu_layers = min(int(total_vram_gb // 0.75), 32)
+                    if llm_use_gpu is True:
+                        n_gpu_layers = _env_int("JARVIN_LLM_N_GPU_LAYERS", n_gpu_layers)
+                    gpu_message = f"GPU detected ({total_vram_gb:.1f} GB VRAM), using {n_gpu_layers} layers."
+                else:
+                    gpu_message = "No GPU detected. Running on CPU."
+            except ImportError:
+                gpu_message = "PyTorch not installed; cannot detect GPU. Running on CPU."
+        else:
+            gpu_message = "GPU disabled by configuration. Running on CPU."
+
+        print(f"🖥️ {gpu_message}")  # <-- added print statement
 
         log.info(
             "🧠 Loading local LLM | path=%s chat_format=%s n_ctx=%d n_threads=%s n_gpu_layers=%d",
@@ -78,6 +100,8 @@ def _load_llama() -> Optional["Llama"]:
     except Exception as e:
         log.exception("Failed to load local LLM: %s", e)
         return None
+
+
 
 def chat_completion(
     system_prompt: str,

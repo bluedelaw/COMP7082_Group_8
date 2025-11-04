@@ -112,6 +112,8 @@ class Settings(BaseSettings):
     gradio_auto_open: bool = True
     gradio_open_delay_sec: float = 1.0
 
+    llm_use_gpu: bool = True
+
     class Config:
         env_prefix = "JARVIN_"
         case_sensitive = False
