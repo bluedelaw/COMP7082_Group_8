@@ -35,12 +35,11 @@ class Poller:
         self._btn_state: dict[str, tuple[Any, Any, Any] | None] = {"start": None, "pause": None}
 
     @staticmethod
-    def _norm_btn_state(u: gr.Update) -> tuple[Any, Any, Any]:
+    def _norm_btn_state(u: dict) -> tuple[Any, Any, Any]:
+        # gr.update(...) returns a dict-like; normalize to a comparable tuple
         return (u.get("interactive", None), u.get("visible", None), u.get("value", None))
 
-    def _status_updates(self) -> Tuple[str | gr.Update,
-                                        gr.Update, gr.Update,
-                                        dict, dict]:
+    def _status_updates(self):
         """
         Fetch /status and /live and compute banner + button updates.
         Returns: (banner_out, start_btn_update, stop_btn_update, status_json, live_json)
@@ -51,7 +50,7 @@ class Poller:
         # Banner
         banner_now = status_str(s, l) or "&nbsp;"
         if banner_now != self._last_banner:
-            banner_out: str | gr.Update = banner_now
+            banner_out = banner_now
             self._last_banner = banner_now
         else:
             banner_out = gr.update()
@@ -98,10 +97,12 @@ class Poller:
         cyc_ms = l.get("cycle_ms")
         processing_now = bool(l.get("processing", False))
 
-        metrics_out: str | gr.Update = gr.update()
+        metrics_out = gr.update()
         if self._last_processing is True and processing_now is False:
-            key = (int(utt_ms) if utt_ms is not None else None,
-                   int(cyc_ms) if cyc_ms is not None else None)
+            key = (
+                int(utt_ms) if utt_ms is not None else None,
+                int(cyc_ms) if cyc_ms is not None else None,
+            )
             if key != self._last_metrics_key:
                 parts = []
                 if utt_ms is not None:
@@ -118,19 +119,19 @@ class Poller:
             hist.append(("user", t_now))
             if r_now:
                 hist.append(("assistant", r_now))
-            hist_out: list[tuple[str, str]] | gr.Update = hist
+            hist_out = hist
         else:
             hist_out = gr.update()
 
         # Now update caches and textbox outputs
         if transcript_changed:
-            t_out: str | gr.Update = t_now
+            t_out = t_now
             self._last_transcript = t_now
         else:
             t_out = gr.update()
 
         if reply_changed:
-            r_out: str | gr.Update = r_now
+            r_out = r_now
             self._last_reply = r_now
         else:
             r_out = gr.update()
