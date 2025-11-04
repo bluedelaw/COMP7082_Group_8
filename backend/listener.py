@@ -9,12 +9,12 @@ from typing import Optional
 
 import config as cfg
 from audio.mic import get_default_input_device_index
-from audio.speech_recognition import get_cached_model_and_device
 from backend.ai_engine import JarvinConfig
 from backend.intent import intent_shutdown, intent_confirm, CONFIRM_WINDOW_SEC
 from backend.live_state import set_snapshot, set_status
 from backend.audio_loop import AudioLoop
 from backend.pipeline import process_utterance
+from backend.asr import WhisperASR  # ← new adapter seam (ASR)
 
 log = logging.getLogger("jarvin")
 
@@ -46,9 +46,13 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
         except asyncio.TimeoutError:
             pass
 
-    # Whisper model warmup (single cached instance)
-    model, device = get_cached_model_and_device(cfg.settings.whisper_model_size)
-    log.info("🧠 Whisper ready | device=%s", device)
+    # ASR warmup via adapter (uses global cached Whisper under the hood)
+    asr = WhisperASR(cfg.settings.whisper_model_size)
+    try:
+        dev = getattr(asr, "device", "cpu")
+    except Exception:
+        dev = "cpu"
+    log.info("🧠 Whisper ready | device=%s", dev)
 
     # Mic device selection
     try:
@@ -100,14 +104,15 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
 
                 set_status(processing=True)
 
-                # ---- process utterance (ASR + LLM) ----
+                # ---- process utterance (ASR + LLM via pipeline ports) ----
+                # Pass the ASR adapter. Leave `llm=None` so pipeline will wrap with cfg_ai.
                 text, reply, tms, wav_path = await asyncio.to_thread(
                     process_utterance,
                     pcm,
                     sr,
-                    model=model,
-                    device=device,
                     cfg_ai=cfg_ai,
+                    asr=asr,
+                    # llm=None  # (optional) let pipeline use LocalChat + cfg_ai
                 )
 
                 # ---- voice shutdown intents (orchestrator keeps this, pipeline stays pure) ----
