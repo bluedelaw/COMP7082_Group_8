@@ -1,24 +1,46 @@
 # memory/conversation.py
-# Global memory management
-conversation_history = []
-user_profile = {}
-last_processed_audio = None
+from __future__ import annotations
 
-def get_conversation_history():
-    return conversation_history
+import threading
+from typing import Any, Dict, List, Tuple
 
-def set_conversation_history(history):
-    global conversation_history
-    conversation_history = history
+# Simple thread-safe in-process memory for UI-only state.
+# (Gradio can run multiple workers; guard with a lock.)
+_lock = threading.Lock()
+_conversation_history: List[Tuple[str, str]] = []
+_user_profile: Dict[str, Any] = {}
+_last_processed_audio: Any = None  # path or opaque handle
 
-def get_user_profile():
-    return user_profile
 
-def set_user_profile(profile):
-    global user_profile
-    user_profile.update(profile)
+def get_conversation_history() -> List[Tuple[str, str]]:
+    with _lock:
+        # return a shallow copy to avoid external mutation
+        return list(_conversation_history)
 
-def clear_conversation():
-    global conversation_history, last_processed_audio
-    conversation_history = []
-    last_processed_audio = None
+
+def set_conversation_history(history: List[Tuple[str, str]]) -> None:
+    with _lock:
+        _conversation_history.clear()
+        _conversation_history.extend(history)
+
+
+def append_turn(role: str, message: str) -> None:
+    with _lock:
+        _conversation_history.append((role, message))
+
+
+def get_user_profile() -> Dict[str, Any]:
+    with _lock:
+        return dict(_user_profile)
+
+
+def set_user_profile(profile: Dict[str, Any]) -> None:
+    with _lock:
+        _user_profile.update(profile)
+
+
+def clear_conversation() -> None:
+    global _last_processed_audio
+    with _lock:
+        _conversation_history.clear()
+        _last_processed_audio = None

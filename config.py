@@ -2,7 +2,7 @@
 """
 Global configuration for Jarvin.
 
-How to use (preferred):
+Usage (preferred):
     import config as cfg
     s = cfg.settings
     print(s.sample_rate)
@@ -20,14 +20,13 @@ from __future__ import annotations
 
 from typing import List, Optional, Literal
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
-
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["debug", "info", "warning", "error", "critical"]
 
 
 class Settings(BaseSettings):
-    # ---------------- Audio / capture ----------------
+    # ---- Audio / capture ----
     sample_rate: int = 16_000
     chunk: int = 1024
     record_seconds: int = 5
@@ -40,7 +39,7 @@ class Settings(BaseSettings):
     # None -> auto-select based on GPU VRAM; otherwise "tiny"|"base"|"small"|"medium"|"large"
     whisper_model_size: Optional[str] = None
 
-    # CORS (dev-friendly; restrict in prod)
+    # CORS (dev-friendly; restrict in prod). Supports JSON list via env.
     cors_allow_origins: List[str] = Field(default_factory=lambda: ["*"])
 
     # Logging
@@ -60,7 +59,7 @@ class Settings(BaseSettings):
     # Uvicorn access logs (HTTP request lines)
     uvicorn_access_log: bool = False
 
-    # ---------------- Local LLM (llama.cpp) settings ----------------
+    # ---- Local LLM (llama.cpp) settings ----
     models_dir: str = "models"
     llm_backend: str = "llama_cpp"
     llm_auto_provision: bool = True
@@ -75,7 +74,7 @@ class Settings(BaseSettings):
     llm_flat_layout: bool = True
     llm_clean_vendor_dirs: bool = True
 
-    # ---------------- Voice Activity / Noise Gate ----------------
+    # ---- Voice Activity / Noise Gate ----
     vad_calibration_sec: float = 1.5
     vad_threshold_mult: float = 3.0
     vad_threshold_abs: float = 200.0
@@ -103,7 +102,7 @@ class Settings(BaseSettings):
     # Voice shutdown
     voice_shutdown_confirm: bool = False
 
-    # ---------------- Server / Gradio UI ----------------
+    # ---- Server / Gradio UI ----
     server_host: str = "0.0.0.0"
     server_port: int = 8000
     gradio_use_cdn: bool = True
@@ -112,9 +111,12 @@ class Settings(BaseSettings):
     gradio_auto_open: bool = True
     gradio_open_delay_sec: float = 1.0
 
-    class Config:
-        env_prefix = "JARVIN_"
-        case_sensitive = False
+    # pydantic-settings v2 config (replaces inner Config)
+    model_config = SettingsConfigDict(
+        env_prefix="JARVIN_",
+        case_sensitive=False,
+        extra="ignore",  # ignore stray envs to be safe
+    )
 
     @field_validator("log_level", mode="before")
     @classmethod
