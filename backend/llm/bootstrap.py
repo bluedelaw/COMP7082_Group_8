@@ -1,11 +1,10 @@
-# backend/llm_bootstrap.py
+# backend/llm/bootstrap.py
 from __future__ import annotations
-
 import logging
 
 import config as cfg
-from backend.hw_detect import detect_hardware
-from backend.llm_model_manager import pick_model, ensure_download, GGUFModelSpec
+from backend.util.hw_detect import detect_hardware
+from backend.llm.model_manager import pick_model, ensure_download, GGUFModelSpec
 
 log = logging.getLogger("jarvin.llm")
 

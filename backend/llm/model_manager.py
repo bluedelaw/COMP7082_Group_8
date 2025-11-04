@@ -1,4 +1,4 @@
-# backend/llm_model_manager.py
+# backend/llm/model_manager.py
 from __future__ import annotations
 
 import os
@@ -8,12 +8,11 @@ from typing import Optional, List
 
 try:
     from huggingface_hub import snapshot_download
-except Exception:  # pragma: no cover
+except Exception:
     snapshot_download = None  # type: ignore
 
 import config as cfg
-from backend.hw_detect import HardwareProfile, detect_hardware
-
+from backend.util.hw_detect import HardwareProfile, detect_hardware
 
 @dataclass
 class GGUFModelSpec:
@@ -23,7 +22,6 @@ class GGUFModelSpec:
     params_b: int
     quant: str
     mem_req_gb: float
-
 
 def _registry(profile: HardwareProfile) -> List[GGUFModelSpec]:
     ram = profile.ram_gb
@@ -62,14 +60,12 @@ def _registry(profile: HardwareProfile) -> List[GGUFModelSpec]:
     candidates.sort(key=lambda m: (pref_index.get(m.logical_name, 1_000), m.mem_req_gb))
     return candidates
 
-
 def get_spec_by_logical_name(name: str, profile: Optional[HardwareProfile] = None) -> GGUFModelSpec:
     profile = profile or detect_hardware()
     for spec in _registry(profile):
         if spec.logical_name == name:
             return spec
     raise ValueError(f"Unknown logical model name: {name}")
-
 
 def pick_model(profile: Optional[HardwareProfile] = None) -> GGUFModelSpec:
     s = cfg.settings
@@ -80,7 +76,6 @@ def pick_model(profile: Optional[HardwareProfile] = None) -> GGUFModelSpec:
     if not candidates:
         raise RuntimeError("No GGUF candidates available for this hardware.")
     return candidates[0]
-
 
 def _validate_gguf(path: str) -> bool:
     try:
@@ -94,13 +89,11 @@ def _validate_gguf(path: str) -> bool:
     except Exception:
         return False
 
-
 def _find_file(root: str, filename: str) -> Optional[str]:
     for dirpath, _dirnames, filenames in os.walk(root):
         if filename in filenames:
             return os.path.join(dirpath, filename)
     return None
-
 
 def ensure_download(spec: GGUFModelSpec, models_dir: Optional[str] = None) -> str:
     if snapshot_download is None:

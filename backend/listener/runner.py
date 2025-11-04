@@ -1,4 +1,4 @@
-# backend/listener.py
+# backend/listener/runner.py
 from __future__ import annotations
 
 import asyncio
@@ -10,14 +10,13 @@ from typing import Optional
 import config as cfg
 from audio.mic import get_default_input_device_index
 from backend.ai_engine import JarvinConfig
-from backend.intent import intent_shutdown, intent_confirm, CONFIRM_WINDOW_SEC
-from backend.live_state import set_snapshot, set_status
-from backend.audio_loop import AudioLoop
-from backend.pipeline import process_utterance
-from backend.asr import WhisperASR  # ← new adapter seam (ASR)
+from backend.listener.intents import intent_shutdown, intent_confirm, CONFIRM_WINDOW_SEC
+from backend.listener.live_state import set_snapshot, set_status
+from backend.listener.loop import AudioLoop
+from backend.core.pipeline import process_utterance
+from backend.asr import WhisperASR
 
 log = logging.getLogger("jarvin")
-
 
 async def _watch_stop_event(stop_event: asyncio.Event, loop: AudioLoop) -> None:
     await stop_event.wait()
@@ -26,7 +25,6 @@ async def _watch_stop_event(stop_event: asyncio.Event, loop: AudioLoop) -> None:
     except Exception:
         pass
 
-
 async def _hard_exit_after_cleanup(stop_event: asyncio.Event, delay_sec: float = 0.15) -> None:
     try:
         stop_event.set()
@@ -34,11 +32,9 @@ async def _hard_exit_after_cleanup(stop_event: asyncio.Event, delay_sec: float =
     finally:
         os._exit(0)
 
-
 async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) -> None:
     s = cfg.settings
 
-    # optional initial delay (for boot sequencing)
     if initial_delay > 0:
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=initial_delay)
@@ -46,7 +42,6 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
         except asyncio.TimeoutError:
             pass
 
-    # ASR warmup via adapter (uses global cached Whisper under the hood)
     asr = WhisperASR(cfg.settings.whisper_model_size)
     try:
         dev = getattr(asr, "device", "cpu")
@@ -54,7 +49,6 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
         dev = "cpu"
     log.info("🧠 Whisper ready | device=%s", dev)
 
-    # Mic device selection
     try:
         device_index: Optional[int] = get_default_input_device_index()
     except Exception as e:
@@ -104,18 +98,14 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
 
                 set_status(processing=True)
 
-                # ---- process utterance (ASR + LLM via pipeline ports) ----
-                # Pass the ASR adapter. Leave `llm=None` so pipeline will wrap with cfg_ai.
                 text, reply, tms, wav_path = await asyncio.to_thread(
                     process_utterance,
                     pcm,
                     sr,
                     cfg_ai=cfg_ai,
                     asr=asr,
-                    # llm=None  # (optional) let pipeline use LocalChat + cfg_ai
                 )
 
-                # ---- voice shutdown intents (orchestrator keeps this, pipeline stays pure) ----
                 if not s.voice_shutdown_confirm:
                     if text and intent_shutdown(text):
                         log.info("🛑 Voice shutdown requested. Exiting immediately…")
@@ -153,7 +143,6 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                             await _hard_exit_after_cleanup(stop_event)
                             return
 
-                # ---- publish snapshot ----
                 cycle_ms = int((time.perf_counter() - cycle_t0) * 1000)
                 if text:
                     log.info("📝  [result] “%s” (ASR %d ms)", text, tms.get("transcribe_ms", 0))

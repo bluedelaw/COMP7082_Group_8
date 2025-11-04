@@ -1,9 +1,9 @@
-# backend/routes/chat.py
+# backend/api/routes/chat.py
 from __future__ import annotations
 
 import logging
 from fastapi import APIRouter
-from backend.schemas import ChatRequest, ChatResponse, ErrorResponse
+from backend.api.schemas import ChatRequest, ChatResponse, ErrorResponse
 from backend.ai_engine import generate_reply, JarvinConfig
 
 log = logging.getLogger("jarvin.routes.chat")

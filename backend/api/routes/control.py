@@ -1,4 +1,4 @@
-# backend/routes/control.py
+# backend/api/routes/control.py
 from __future__ import annotations
 
 import asyncio
@@ -6,8 +6,8 @@ import logging
 import os
 from fastapi import APIRouter, Request
 
-from backend.schemas import StatusResponse, SimpleMessage
-from backend.listener import run_listener
+from backend.api.schemas import StatusResponse, SimpleMessage
+from backend.listener.runner import run_listener
 
 log = logging.getLogger("jarvin.routes.control")
 

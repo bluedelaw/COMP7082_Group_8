@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 
-from backend.llm_runtime import chat_completion
+from backend.llm.runtime_llama_cpp import chat_completion
 
 log = logging.getLogger("jarvin.ai")
 

@@ -1,4 +1,4 @@
-# backend/routes/transcription.py
+# backend/api/routes/transcription.py
 from __future__ import annotations
 
 import os
@@ -10,10 +10,10 @@ from fastapi import APIRouter, UploadFile, File
 
 import config as cfg
 from audio.speech_recognition import transcribe_audio
-from backend.schemas import (
+from backend.api.schemas import (
     TranscribeResponse,
     ErrorResponse,
-)
+ )
 
 log = logging.getLogger("jarvin.routes.transcription")
 

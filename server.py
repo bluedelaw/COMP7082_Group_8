@@ -13,8 +13,8 @@ import gradio as gr
 from fastapi.responses import RedirectResponse
 
 import config as cfg
-from backend.logging_setup import init_logging
-from backend.app import create_app as create_fastapi_app
+from backend.util.logging_setup import init_logging
+from backend.api.app import create_app as create_fastapi_app 
 from ui.app import create_app as create_gradio_blocks
 
 

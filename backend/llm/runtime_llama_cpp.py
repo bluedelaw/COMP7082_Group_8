@@ -1,4 +1,4 @@
-# backend/llm_runtime.py
+# backend/llm/runtime_llama_cpp.py
 from __future__ import annotations
 
 import logging
@@ -7,7 +7,7 @@ from functools import lru_cache
 from typing import List, Dict, Optional, TYPE_CHECKING
 
 import config as cfg
-from backend.llm_model_manager import pick_model, ensure_download, GGUFModelSpec
+from backend.llm.model_manager import pick_model, ensure_download, GGUFModelSpec
 
 if TYPE_CHECKING:
     from llama_cpp import Llama  # type: ignore
@@ -105,3 +105,4 @@ def chat_completion(
     except Exception as e:
         log.exception("LLM chat completion failed: %s", e)
         return None
+

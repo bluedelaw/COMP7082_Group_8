@@ -1,4 +1,4 @@
-# backend/hw_detect.py
+# backend/util/hw_detect.py
 from __future__ import annotations
 
 import platform
@@ -9,7 +9,6 @@ from typing import Optional
 import psutil
 import torch
 
-
 @dataclass
 class HardwareProfile:
     os: str
@@ -19,18 +18,15 @@ class HardwareProfile:
     has_nvidia: bool
     cuda_name: Optional[str]
     vram_gb: Optional[float]
-    has_mps: bool  # Apple Metal (MPS) available
-
+    has_mps: bool
 
 def _nvidia_vram_gb() -> Optional[float]:
-    # Prefer torch device props if available
     if torch.cuda.is_available():
         try:
             props = torch.cuda.get_device_properties(0)
             return round(props.total_memory / (1024 ** 3), 2)
         except Exception:
             pass
-    # Fallback to nvidia-smi if present
     try:
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
@@ -44,7 +40,6 @@ def _nvidia_vram_gb() -> Optional[float]:
         pass
     return None
 
-
 def detect_hardware() -> HardwareProfile:
     os_name = platform.system().lower()
     arch = platform.machine().lower()
@@ -56,7 +51,7 @@ def detect_hardware() -> HardwareProfile:
     cuda_name = None
     if has_nvidia:
         try:
-            cuda_name = torch.version.cuda  # e.g., '12.1'
+            cuda_name = torch.version.cuda
         except Exception:
             cuda_name = None
 

@@ -1,4 +1,4 @@
-# backend/app.py
+# backend/api/app.py
 from __future__ import annotations
 
 import asyncio
@@ -9,13 +9,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import config as cfg
-from backend.listener import run_listener
-from backend.llm_bootstrap import provision_llm
-from backend.routes.transcription import router as transcription_router
-from backend.routes.control import router as control_router
-from backend.routes.health import router as health_router
-from backend.routes.chat import router as chat_router
-from backend.routes.live import router as live_router
+from backend.listener.runner import run_listener
+from backend.llm.bootstrap import provision_llm
+from backend.api.routes.transcription import router as transcription_router
+from backend.api.routes.control import router as control_router
+from backend.api.routes.health import router as health_router
+from backend.api.routes.chat import router as chat_router
+from backend.api.routes.live import router as live_router  # created below
 
 log = logging.getLogger("jarvin")
 

@@ -1,4 +1,3 @@
 # backend/llm/__init__.py
-from .runtime_local import LocalChat
-
-__all__ = ["LocalChat"]
+# Intentionally empty to avoid import side effects during submodule loads.
+__all__ = []
