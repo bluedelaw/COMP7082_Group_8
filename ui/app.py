@@ -33,6 +33,7 @@ def create_app():
 
         # ✅ Single polling loop drives EVERYTHING (banner, textboxes, metrics, history).
         poller = Poller()
+        # Gradio 4.44.1: Timer takes `value` (seconds), not `interval`
         timer = gr.Timer(value=0.75, active=True)  # 750ms feels snappy without spamming
         tick_evt = timer.tick(
             fn=poller.tick,

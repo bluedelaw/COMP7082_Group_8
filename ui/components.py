@@ -99,7 +99,7 @@ def build_live_tab(components: dict) -> None:
                 max_lines=10,
                 interactive=False,
                 show_copy_button=True,
-                autoscroll=True,
+                # removed unsupported `autoscroll` for Gradio 4.44.x
                 elem_id="history_box",
                 elem_classes=["conversation-history"],
             )
