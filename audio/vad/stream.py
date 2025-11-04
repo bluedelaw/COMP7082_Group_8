@@ -51,6 +51,7 @@ class MicStream:
                     input=True,
                     frames_per_buffer=self.chunk,
                 )
+                log.warning("MicStream: requested index=%s failed; fell back to system default.", self.device_index)
 
     def read_frame(self) -> np.ndarray:
         assert self._stream is not None, "MicStream not open"

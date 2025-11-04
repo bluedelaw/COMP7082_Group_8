@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse
 
 import config as cfg
 from backend.util.logging_setup import init_logging
-from backend.api.app import create_app as create_fastapi_app 
+from backend.api.app import create_app as create_fastapi_app
 from ui.app import create_app as create_gradio_blocks
 
 
@@ -65,26 +65,33 @@ def main() -> int:
     init_logging(s.log_level)
     _set_gradio_env()
 
-    reload_flag = s.uvicorn_reload_windows if os.name == "nt" else s.uvicorn_reload_others
     host = s.server_host
     port = int(s.server_port)
     mount_path = s.gradio_mount_path.rstrip("/") or "/"
+    reload_flag = s.uvicorn_reload_windows if os.name == "nt" else s.uvicorn_reload_others
+
+    # Build app first so we can stash a server reference in app.state
+    app = build_app_with_ui()
 
     if s.gradio_auto_open:
         url = _browser_url(host, port, mount_path)
         _open_browser_later(url, delay=s.gradio_open_delay_sec)
 
+    config = uvicorn.Config(
+        app=app,
+        host=host,
+        port=port,
+        reload=reload_flag,
+        log_level=s.log_level,
+        access_log=s.uvicorn_access_log,
+        timeout_graceful_shutdown=3,  # short, clean shutdown
+        timeout_keep_alive=1,         # drop idle keep-alives quickly
+    )
+    server = uvicorn.Server(config)
+    setattr(app.state, "uvicorn_server", server)
+
     try:
-        # Always run via factory (avoids building app twice and keeps code path uniform)
-        uvicorn.run(
-            "server:build_app_with_ui",
-            host=host,
-            port=port,
-            reload=reload_flag,
-            log_level=s.log_level,
-            factory=True,
-            access_log=s.uvicorn_access_log,
-        )
+        server.run()
         return 0
     except KeyboardInterrupt:
         return 0

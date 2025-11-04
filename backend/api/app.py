@@ -17,6 +17,7 @@ from backend.api.routes.health import router as health_router
 from backend.api.routes.chat import router as chat_router
 from backend.api.routes.live import router as live_router
 from backend.api.routes.audio import router as audio_router  # <-- single audio router
+from backend.middleware.graceful_cancel import GracefulCancelMiddleware  # NEW
 
 log = logging.getLogger("jarvin")
 
@@ -58,6 +59,9 @@ async def _lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     s = cfg.settings
     app = FastAPI(title="Jarvin Local", lifespan=_lifespan)
+
+    # Swallow benign cancellations while shutting down (prevents noisy stack traces)
+    app.add_middleware(GracefulCancelMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

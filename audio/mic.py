@@ -90,9 +90,50 @@ def get_selected_input_device() -> Tuple[Optional[int], Optional[str]]:
         return None, None
 
 
+def _probe_device_rms(index: int, seconds: float = 0.5) -> tuple[float, float, float]:
+    """
+    Open the device briefly and measure (p10, p90, avg) RMS.
+    Returns (p10, p90, avg). Raises on open failure.
+    """
+    s = cfg.settings
+    with suppress_alsa_warnings_if_linux():
+        p = pyaudio.PyAudio()
+        stream = None
+        try:
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=s.sample_rate,
+                input=True,
+                frames_per_buffer=s.chunk,
+                input_device_index=index,
+            )
+            frames = int((s.sample_rate / s.chunk) * seconds)
+            vals: list[float] = []
+            for _ in range(max(1, frames)):
+                data = stream.read(s.chunk, exception_on_overflow=False)
+                x = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+                vals.append(float(np.sqrt(np.mean(x * x))) if x.size else 0.0)
+        finally:
+            try:
+                if stream:
+                    if stream.is_active():
+                        stream.stop_stream()
+                    stream.close()
+            except Exception:
+                pass
+            p.terminate()
+    if not vals:
+        return (0.0, 0.0, 0.0)
+    p10 = float(np.percentile(vals, 10))
+    p90 = float(np.percentile(vals, 90))
+    avg = float(np.mean(vals))
+    return (p10, p90, avg)
+
+
 def set_selected_input_device(index: int) -> Tuple[int, str]:
     """
-    Validate that `index` is input-capable and can be opened with current settings.
+    Validate that `index` opens AND that it isn't effectively silent.
     On success, cache and return (index, name).
     """
     global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
@@ -118,10 +159,24 @@ def set_selected_input_device(index: int) -> Tuple[int, str]:
                 raise ValueError(f"Device [{index}] cannot be opened: {e}")
         finally:
             p.terminate()
+
+    # Quick signal presence probe
+    p10, p90, avg = _probe_device_rms(index, seconds=0.5)
+    if p90 < 1.5 and avg < 1.0:
+        # silent device: don't cache it
+        name = str(info["name"]) if info else f"index {index}"
+        raise RuntimeError(
+            f"Device appears silent (p90≈{p90:.1f}, avg≈{avg:.1f}). "
+            "This often means a virtual mapper/disabled input."
+        )
+
     name = str(info["name"]) if info else f"index {index}"
     _CACHED_DEVICE_INDEX = index
     _CACHED_DEVICE_NAME = name
-    log.info("🎤 Selected input device [%d] %s", index, name)
+    log.info(
+        "🎤 Selected input device [%d] %s (probe p10=%.1f p90=%.1f avg=%.1f)",
+        index, name, p10, p90, avg
+    )
     return _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
 
 

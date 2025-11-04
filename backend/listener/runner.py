@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from typing import Optional
 
@@ -24,13 +23,6 @@ async def _watch_stop_event(stop_event: asyncio.Event, loop: AudioLoop) -> None:
         loop.request_stop()
     except Exception:
         pass
-
-async def _hard_exit_after_cleanup(stop_event: asyncio.Event, delay_sec: float = 0.15) -> None:
-    try:
-        stop_event.set()
-        await asyncio.sleep(delay_sec)
-    finally:
-        os._exit(0)
 
 async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) -> None:
     s = cfg.settings
@@ -106,11 +98,12 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                     asr=asr,
                 )
 
+                # Voice shutdown logic (no hard os._exit; just stop listener)
                 if not s.voice_shutdown_confirm:
                     if text and intent_shutdown(text):
-                        log.info("🛑 Voice shutdown requested. Exiting immediately…")
+                        log.info("🛑 Voice shutdown requested. Stopping listener…")
                         set_status(processing=False)
-                        await _hard_exit_after_cleanup(stop_event)
+                        stop_event.set()
                         return
                 else:
                     now = time.monotonic()
@@ -138,9 +131,9 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                             continue
                     else:
                         if text and intent_confirm(text):
-                            log.info("🛑 Voice confirmation received. Shutting down now…")
+                            log.info("🛑 Voice confirmation received. Stopping listener…")
                             set_status(processing=False)
-                            await _hard_exit_after_cleanup(stop_event)
+                            stop_event.set()
                             return
 
                 cycle_ms = int((time.perf_counter() - cycle_t0) * 1000)

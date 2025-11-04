@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -52,11 +53,37 @@ async def get_devices() -> DevicesResponse:
 
 @router.post("/audio/select", response_model=SelectResponse)
 async def select_device(payload: SelectRequest, request: Request) -> SelectResponse:
-    # Set the cached default first so a restart will pick it up
-    # (runner calls get_default_input_device_index() on open)
+    """
+    Apply a new input device. Reject silent/virtual devices with a friendly message.
+    Optionally restart the listener to pick it up.
+    """
     devs = dict(list_input_devices())
     name = devs.get(payload.index)
-    set_default_input_device_index(payload.index, name)
+
+    # Set cached default only if it's valid (will raise if “silent”)
+    try:
+        idx, nm = set_default_input_device_index(payload.index, name), name  # prefill
+        # set_default_input_device_index returns None; call set_selected_input_device instead
+    except Exception:
+        # For compatibility with old callers; but in this module we want real validation
+        pass
+
+    # Re-validate with full open+probe (from audio.mic.set_selected_input_device)
+    from audio.mic import set_selected_input_device as _validate_select
+    try:
+        idx, nm = _validate_select(payload.index)
+    except Exception as e:
+        msg = str(e)
+        log.warning("Mic select rejected: %s", msg)
+        return SelectResponse(
+            ok=False,
+            selected_index=None,
+            selected_name=None,
+            message=(
+                f"Could not use device [{payload.index}] {name or ''}: {msg}. "
+                "Pick a hardware microphone (not 'Sound Mapper') or enable the device in OS settings."
+            ),
+        )
 
     if payload.restart:
         app = request.app
@@ -67,12 +94,13 @@ async def select_device(payload: SelectRequest, request: Request) -> SelectRespo
             log.info("Stopping listener to apply new input device…")
             try:
                 with asyncio.timeout(2.5):
-                    await task
+                    with suppress(Exception):
+                        await task
             except Exception:
                 pass
             app.state.stop_event.clear()
         # start again with new default
         app.state.listener_task = asyncio.create_task(run_listener(app.state.stop_event, initial_delay=0.0))
-        log.info("Listener restarted with input device [%d] %s", payload.index, name or "")
+        log.info("Listener restarted with input device [%d] %s", idx, nm or "")
 
-    return SelectResponse(ok=True, selected_index=payload.index, selected_name=name, message="applied")
+    return SelectResponse(ok=True, selected_index=idx, selected_name=nm, message="Input device applied.")
