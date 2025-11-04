@@ -9,7 +9,7 @@ import threading
 import time
 from contextlib import suppress
 
-from fastapi import APIRouter, Request, BackgroundTasks
+from fastapi import APIRouter, Request
 
 from backend.api.schemas import StatusResponse, SimpleMessage
 from backend.listener.runner import run_listener
@@ -66,10 +66,9 @@ def _force_exit_soon(delay: float = 0.35) -> None:
 
 
 @router.post("/shutdown", response_model=SimpleMessage)
-async def shutdown_server(request: Request, background_tasks: BackgroundTasks) -> SimpleMessage:
+async def shutdown_server(request: Request) -> SimpleMessage:
     """
     Gracefully stop the listener and then ask Uvicorn to exit *after* this response is sent.
-    Uses BackgroundTasks to avoid racing the HTTP response.
     Includes Windows failsafe (os._exit) if the Uvicorn handle is missing or unresponsive.
     """
     app = request.app
@@ -96,15 +95,15 @@ async def shutdown_server(request: Request, background_tasks: BackgroundTasks) -
         else:
             # No handle to uvicorn; schedule a safe hard-exit fallback
             log.info("No uvicorn server handle; using hard-exit fallback.")
-            loop = asyncio.get_running_loop()
-            loop.call_later(0.2, _force_exit_soon, 0.0)
+            _force_exit_soon(0.2)
 
         # Extra Windows robustness: if the process is still around shortly after, force exit.
         if sys.platform.startswith("win"):
             loop = asyncio.get_running_loop()
             loop.call_later(1.0, _force_exit_soon, 0.0)
 
-    background_tasks.add_task(_signal_exit)
+    # IMPORTANT: actually schedule the coroutine on the running loop
+    asyncio.create_task(_signal_exit())
 
     # 3) Respond immediately; UI can disable buttons and stop polling
     return SimpleMessage(ok=True, message="Server is shutting down…")
