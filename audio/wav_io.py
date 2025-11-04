@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import wave
 import numpy as np
-from audio.utils import write_wav_int16_mono as _write_wav_int16_mono
-
+import os
 
 def linear_resample(audio: np.ndarray, src_hz: int, dst_hz: int) -> np.ndarray:
     if src_hz == dst_hz or audio.size == 0:
@@ -39,6 +38,21 @@ def wav_to_float32_mono_16k(path: str) -> np.ndarray:
 
     return audio
 
+def _peak_normalize_int16(x: np.ndarray, target_dbfs: float) -> np.ndarray:
+    if x.size == 0:
+        return x
+    peak = int(np.max(np.abs(x)))
+    if peak == 0:
+        return x
+    target_linear = 32767.0 * (10.0 ** (target_dbfs / 20.0))
+    gain = target_linear / float(peak)
+    return np.clip(x.astype(np.float32) * gain, -32768.0, 32767.0).astype(np.int16)
 
 def write_wav_int16_mono(path: str, pcm: np.ndarray, sample_rate: int, normalize_dbfs: float | None = None) -> None:
-    _write_wav_int16_mono(path, pcm, sample_rate, normalize_dbfs)
+    y = _peak_normalize_int16(pcm, normalize_dbfs) if normalize_dbfs is not None else pcm
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with wave.open(path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(y.tobytes())
