@@ -5,7 +5,7 @@ import gradio as gr
 
 from ui.styles import CSS
 from ui.components import build_header, build_profile_tab, build_live_tab, init_state
-from ui.handlers import bind_profile_actions, bind_live_actions, _live_stream  # import stream generator
+from ui.handlers import bind_profile_actions, bind_live_actions, _live_stream  # stream generator
 
 
 def create_app():
@@ -28,7 +28,14 @@ def create_app():
         bind_profile_actions(components)
         bind_live_actions(components)
 
-        # ✅ Auto-attach the live stream on page load (no 'stream=' needed on Gradio 4.x)
+        # ✅ Populate microphone list and current selection on page load
+        demo.load(
+            fn=components["_init_devices_fn"],   # set by bind_profile_actions
+            outputs=[components["device_dropdown"], components["device_current"]],
+            show_progress=False,
+        )
+
+        # ✅ Auto-attach the live stream on page load
         load_stream_evt = demo.load(
             fn=_live_stream,
             inputs=[components["conversation_memory"]],
@@ -55,7 +62,7 @@ def create_app():
         )
 
         # enable queue with default settings (Gradio 4.x)
-        demo.queue()  # NOTE: no concurrency_count (deprecated)
+        demo.queue()
 
     return demo
 

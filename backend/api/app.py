@@ -15,7 +15,8 @@ from backend.api.routes.transcription import router as transcription_router
 from backend.api.routes.control import router as control_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.chat import router as chat_router
-from backend.api.routes.live import router as live_router  # created below
+from backend.api.routes.live import router as live_router
+from backend.api.routes.audio import router as audio_router  # <-- single audio router
 
 log = logging.getLogger("jarvin")
 
@@ -71,5 +72,6 @@ def create_app() -> FastAPI:
     app.include_router(control_router)
     app.include_router(chat_router)
     app.include_router(live_router)
+    app.include_router(audio_router)  # <-- single include
 
     return app

@@ -16,6 +16,7 @@ from audio.utils import suppress_alsa_warnings_if_linux
 
 log = logging.getLogger("jarvin.mic")
 
+# Cached selection (default or explicit user choice)
 _CACHED_DEVICE_INDEX: Optional[int] = None
 _CACHED_DEVICE_NAME: Optional[str] = None
 
@@ -28,7 +29,9 @@ def ensure_temp() -> None:
     os.makedirs(cfg.settings.temp_dir, exist_ok=True)
     ensure_temp_dir()
 
-def list_input_devices() -> List[Tuple[int, str]]:  # type: ignore[name-defined]
+
+def list_input_devices() -> List[Tuple[int, str]]:
+    """Return [(index, name)] for input-capable devices."""
     devices: List[Tuple[int, str]] = []
     with suppress_alsa_warnings_if_linux():
         p = pyaudio.PyAudio()
@@ -43,6 +46,9 @@ def list_input_devices() -> List[Tuple[int, str]]:  # type: ignore[name-defined]
 
 
 def get_default_input_device_index() -> int:
+    """
+    Resolve once and cache the system default input device (or first input-capable).
+    """
     global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
     if _CACHED_DEVICE_INDEX is not None:
         return _CACHED_DEVICE_INDEX
@@ -66,6 +72,57 @@ def get_default_input_device_index() -> int:
     _CACHED_DEVICE_NAME = name
     log.info("🎤 Using input device [%d] %s", idx, name)
     return idx
+
+
+def get_selected_input_device() -> Tuple[Optional[int], Optional[str]]:
+    """
+    Returns (index, name) of the currently selected input device, if any.
+    If none selected yet, resolves & caches the default.
+    """
+    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
+    try:
+        if _CACHED_DEVICE_INDEX is None:
+            idx = get_default_input_device_index()
+        else:
+            idx = _CACHED_DEVICE_INDEX
+        return idx, _CACHED_DEVICE_NAME
+    except Exception:
+        return None, None
+
+
+def set_selected_input_device(index: int) -> Tuple[int, str]:
+    """
+    Validate that `index` is input-capable and can be opened with current settings.
+    On success, cache and return (index, name).
+    """
+    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
+    with suppress_alsa_warnings_if_linux():
+        p = pyaudio.PyAudio()
+        info = None
+        try:
+            info = p.get_device_info_by_index(index)
+            if info.get("maxInputChannels", 0) <= 0:
+                raise ValueError("Selected device has no input channels.")
+            # Try open to ensure it works now
+            try:
+                stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=cfg.settings.sample_rate,
+                    input=True,
+                    frames_per_buffer=cfg.settings.chunk,
+                    input_device_index=index,
+                )
+                stream.close()
+            except Exception as e:
+                raise ValueError(f"Device [{index}] cannot be opened: {e}")
+        finally:
+            p.terminate()
+    name = str(info["name"]) if info else f"index {index}"
+    _CACHED_DEVICE_INDEX = index
+    _CACHED_DEVICE_NAME = name
+    log.info("🎤 Selected input device [%d] %s", index, name)
+    return _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
 
 
 def record_wav(
@@ -99,6 +156,7 @@ def record_wav(
             input_device_index=device_index,
         )
     except OSError:
+        # Fallback to default input if selected index fails at runtime
         stream = p.open(
             format=pyaudio.paInt16,
             channels=1,
@@ -182,3 +240,12 @@ def record_and_prepare_chunk(
             except OSError:
                 pass
         return amp
+
+def set_default_input_device_index(index: int, name: Optional[str] = None) -> None:
+    """
+    Override the cached default device. The listener picks this up on next start.
+    """
+    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
+    _CACHED_DEVICE_INDEX = int(index)
+    _CACHED_DEVICE_NAME = name
+    log.info("🎤 Selected input device [%d] %s", index, name or "")

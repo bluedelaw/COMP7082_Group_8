@@ -80,6 +80,18 @@ def build_live_tab(components: dict) -> None:
                 )
                 components["metrics"] = gr.HTML("&nbsp;", elem_id="metrics_bar")
 
+        # 🎤 Microphone controls (single source of truth)
+        with gr.Accordion("🎤 Microphone", open=False):
+            components["device_current"] = gr.Markdown("", elem_classes="status-text")
+            with gr.Row():
+                components["device_dropdown"] = gr.Dropdown(
+                    label="Input device",
+                    choices=[],   # populated on load
+                    value=None,
+                    interactive=True,
+                )
+                components["device_refresh_btn"] = gr.Button("🔄 Refresh", scale=0)
+
         with gr.Accordion("💬 Conversation History", open=False):
             components["history_display"] = gr.Textbox(
                 label="",
