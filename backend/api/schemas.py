@@ -1,26 +1,36 @@
 # backend/api/schemas.py
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-class TranscribeResponse(BaseModel):
+
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class TranscribeResponse(_StrictModel):
     transcribed_text: str
 
-class ErrorResponse(BaseModel):
+
+class ErrorResponse(_StrictModel):
     error: str
 
-class StatusResponse(BaseModel):
+
+class StatusResponse(_StrictModel):
     listening: bool
 
-class SimpleMessage(BaseModel):
+
+class SimpleMessage(_StrictModel):
     ok: bool
     message: str
 
-class ChatRequest(BaseModel):
+
+class ChatRequest(_StrictModel):
     user_text: str
     context: str | None = None
     system_instructions: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
 
-class ChatResponse(BaseModel):
+
+class ChatResponse(_StrictModel):
     reply: str

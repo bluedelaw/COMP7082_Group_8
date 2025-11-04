@@ -25,8 +25,11 @@ def _set_gradio_env() -> None:
 
 
 def build_app_with_ui():
+    """
+    Compose FastAPI + mount Gradio Blocks at configured path.
+    Assumes Gradio env vars are already set by caller.
+    """
     s = cfg.settings
-    _set_gradio_env()
 
     fastapi_app = create_fastapi_app()
 
@@ -52,6 +55,7 @@ def _open_browser_later(url: str, delay: float) -> None:
     def _worker():
         time.sleep(max(0.0, delay))
         try:
+            # No-op in headless/CI environments
             webbrowser.open(url, new=2)
         except Exception:
             pass
@@ -63,7 +67,7 @@ def _open_browser_later(url: str, delay: float) -> None:
 def main() -> int:
     s = cfg.settings
     init_logging(s.log_level)
-    _set_gradio_env()
+    _set_gradio_env()  # set once here
 
     host = s.server_host
     port = int(s.server_port)
