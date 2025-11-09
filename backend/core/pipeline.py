@@ -9,10 +9,15 @@ import config as cfg
 from backend.core.ports import ASRTranscriber, LLMChatEngine, AudioSink
 from audio.wav_io import write_wav_int16_mono as _write_wav_int16_mono
 from backend.util.paths import temp_unique_path
-from backend.ai_engine import JarvinConfig
+from backend.ai_engine import JarvinConfig, build_context
 from backend.asr.whisper import WhisperASR
 from backend.llm.runtime_local import LocalChat
 from backend.tts.engine import synth_to_wav
+from memory.conversation import (
+    get_conversation_history,
+    get_user_profile,
+    append_turn,
+)
 
 class _FnSink:
     @staticmethod
@@ -55,9 +60,9 @@ def process_utterance(
             def __init__(self, base: LocalChat, cfg_ai: JarvinConfig) -> None:
                 self._base = base
                 self._cfg = cfg_ai
-            def reply(self, user_text: str) -> str:
+            def reply(self, user_text: str, *, context: Optional[str] = None) -> str:
                 from backend.ai_engine import generate_reply as _gen
-                return _gen(user_text, cfg=self._cfg)
+                return _gen(user_text, cfg=self._cfg, context=context)
         llm = _LLMWithCfg(LocalChat(), cfg_ai)
 
     t0 = time.perf_counter()
@@ -68,9 +73,19 @@ def process_utterance(
     t_reply_ms = 0
     tts_path: Optional[str] = None
     if text:
+        # Build compact context for the LLM from in-process memory
+        profile = get_user_profile()
+        history = get_conversation_history()
+        ctx = build_context(profile=profile, history=history, max_turns=6)
+
         t1 = time.perf_counter()
-        reply = llm.reply(text) or ""
+        reply = llm.reply(text, context=ctx) or ""
         t_reply_ms = int((time.perf_counter() - t1) * 1000)
+
+        # Persist this turn for future context
+        append_turn("user", text)
+        if reply:
+            append_turn("assistant", reply)
 
     # Synthesize reply if available (non-fatal if it fails)
     if reply:
