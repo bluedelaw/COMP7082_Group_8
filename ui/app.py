@@ -46,6 +46,7 @@ def create_app():
                 components["conversation_memory"],
                 components["start_btn"],
                 components["stop_btn"],
+                components["tts_audio"],
             ],
             show_progress=False,
             concurrency_limit=1,

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import os
 from typing import Optional
 
 import config as cfg
@@ -90,7 +91,7 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
 
                 set_status(processing=True)
 
-                text, reply, tms, wav_path = await asyncio.to_thread(
+                text, reply, tms, wav_path, tts_wav_path = await asyncio.to_thread(
                     process_utterance,
                     pcm,
                     sr,
@@ -122,6 +123,7 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                                 cycle_ms=None,
                                 utter_ms=tms.get("utter_ms"),
                                 wav_path=wav_path,
+                                tts_url=None,
                             )
                             set_status(processing=False)
                             try:
@@ -146,12 +148,14 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                     log.info("📣  [reply] %s", reply)
                 log.info("⏱️  [cycle] done in %d ms\n", cycle_ms)
 
+                tts_url = f"/_temp/{os.path.basename(tts_wav_path)}" if tts_wav_path else None
                 set_snapshot(
                     transcript=text if text else None,
                     reply=reply if reply else None,
                     cycle_ms=cycle_ms,
                     utter_ms=tms.get("utter_ms"),
                     wav_path=wav_path,
+                    tts_url=tts_url,
                 )
 
                 set_status(processing=False)

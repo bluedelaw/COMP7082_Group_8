@@ -5,7 +5,7 @@ from typing import Any, Tuple
 import gradio as gr
 
 from ui.api import (
-    api_get_status, api_get_live,
+    api_get_status, api_get_live, server_url,
     status_str, button_updates,
 )
 
@@ -23,6 +23,7 @@ class Poller:
         # transcript/reply
         self._last_transcript: str | None = None
         self._last_reply: str | None = None
+        self._last_tts_url: str | None = None
 
         # metrics edge detection (processing True -> False)
         self._last_processing: bool | None = None
@@ -86,11 +87,14 @@ class Poller:
         # Current values
         t_now = (l.get("transcript") or "").strip()
         r_now = (l.get("reply") or "").strip()
+        tts_rel = (l.get("tts_url") or "").strip()
+        tts_abs = (server_url() + tts_rel) if tts_rel else ""
 
         # Determine if either changed BEFORE mutating caches (fixes history not updating)
         transcript_changed = t_now != self._last_transcript
         reply_changed = r_now != self._last_reply
         pair_changed = transcript_changed or reply_changed
+        tts_changed = bool(tts_abs) and (tts_abs != self._last_tts_url)
 
         # Metrics: edge detect processing True -> False
         utt_ms = l.get("utter_ms")
@@ -123,7 +127,7 @@ class Poller:
         else:
             hist_out = gr.update()
 
-        # Now update caches and textbox outputs
+        # Now update caches and textbox/audio outputs
         if transcript_changed:
             t_out = t_now
             self._last_transcript = t_now
@@ -136,6 +140,12 @@ class Poller:
         else:
             r_out = gr.update()
 
+        if tts_changed:
+            audio_out = tts_abs
+            self._last_tts_url = tts_abs
+        else:
+            audio_out = gr.update()
+
         return (
             banner_out,  # status_banner
             t_out,       # transcription
@@ -144,4 +154,5 @@ class Poller:
             hist_out,    # conversation_memory
             start_u,     # start button
             pause_u,     # stop button
+            audio_out,   # tts audio
         )

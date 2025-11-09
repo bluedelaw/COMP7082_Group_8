@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 import config as cfg
 from backend.listener.runner import run_listener
@@ -18,6 +19,7 @@ from backend.api.routes.chat import router as chat_router
 from backend.api.routes.live import router as live_router
 from backend.api.routes.audio import router as audio_router  # <-- single audio router
 from backend.middleware.graceful_cancel import GracefulCancelMiddleware  # NEW
+from backend.util.paths import ensure_temp_dir
 
 log = logging.getLogger("jarvin")
 
@@ -35,7 +37,7 @@ async def _lifespan(app: FastAPI):
     app.state.listener_task = None
     if s.start_listener_on_boot:
         app.state.listener_task = asyncio.create_task(
-            run_listener(app.state.stop_event, initial_delay=s.initial_listener_delay)
+            run_listener(app.state.stop_event, initial_listener_delay := s.initial_listener_delay)
         )
         log.info("🎧 Listener task started automatically on server boot.")
     else:
@@ -77,5 +79,9 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(live_router)
     app.include_router(audio_router)  # <-- single include
+
+    # Serve ephemeral files (ASR/utterances and synthesized TTS) under /_temp
+    temp_root = ensure_temp_dir()
+    app.mount("/_temp", StaticFiles(directory=temp_root, html=False), name="temp")
 
     return app

@@ -20,6 +20,7 @@ _state: Dict[str, Any] = {
     "reply": None,       # LLM reply text
     "cycle_ms": None,    # end-to-end processing time for the cycle
     "wav_path": None,    # last utterance wav file path (temp)
+    "tts_url": None,     # relative URL to synthesized speech (served via /_temp)
     "recording": False,  # VAD is currently capturing speech
     "processing": False, # backend is currently processing an utterance
 }
@@ -32,6 +33,7 @@ def set_snapshot(
     cycle_ms: Optional[int],
     utter_ms: Optional[int],
     wav_path: Optional[str],
+    tts_url: Optional[str],
 ) -> None:
     """
     Called once per completed utterance/cycle. Bumps the global seq so the UI
@@ -48,6 +50,7 @@ def set_snapshot(
             "cycle_ms": cycle_ms,
             "utter_ms": utter_ms,
             "wav_path": wav_path,
+            "tts_url": tts_url,
         })
         _cv.notify_all()  # wake any UI streams waiting for a new utterance
 

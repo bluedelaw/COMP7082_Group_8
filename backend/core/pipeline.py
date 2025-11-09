@@ -12,6 +12,7 @@ from backend.util.paths import temp_unique_path
 from backend.ai_engine import JarvinConfig
 from backend.asr.whisper import WhisperASR
 from backend.llm.runtime_local import LocalChat
+from backend.tts.engine import synth_to_wav
 
 class _FnSink:
     @staticmethod
@@ -28,7 +29,7 @@ def process_utterance(
     asr: Optional[ASRTranscriber] = None,
     llm: Optional[LLMChatEngine] = None,
     audio_sink: Optional[AudioSink] = None,
-) -> Tuple[str, str, Dict[str, int], str]:
+) -> Tuple[str, str, Dict[str, int], str, Optional[str]]:
     s = cfg.settings
     cfg_ai = cfg_ai or JarvinConfig()
 
@@ -65,14 +66,22 @@ def process_utterance(
 
     reply = ""
     t_reply_ms = 0
+    tts_path: Optional[str] = None
     if text:
         t1 = time.perf_counter()
         reply = llm.reply(text) or ""
         t_reply_ms = int((time.perf_counter() - t1) * 1000)
+
+    # Synthesize reply if available (non-fatal if it fails)
+    if reply:
+        try:
+            tts_path = synth_to_wav(reply)
+        except Exception:
+            tts_path = None
 
     timings = {
         "utter_ms": utt_ms,
         "transcribe_ms": t_trans_ms,
         "reply_ms": t_reply_ms,
     }
-    return text, reply, timings, wav_path
+    return text, reply, timings, wav_path, tts_path

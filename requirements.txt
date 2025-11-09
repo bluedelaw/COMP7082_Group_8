@@ -30,3 +30,6 @@ llama-cpp-python==0.2.90
 
 # 🔧 System & hardware info (used by backend/hw_detect.py)
 psutil==5.9.8
+
+# Text-to-Speech engine
+pyttsx3==2.90

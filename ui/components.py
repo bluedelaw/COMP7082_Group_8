@@ -78,6 +78,12 @@ def build_live_tab(components: dict) -> None:
                     interactive=False,
                     show_copy_button=True,
                 )
+                # Autoplay synthesized TTS when a new reply arrives
+                components["tts_audio"] = gr.Audio(
+                    label="🔊 Spoken Reply",
+                    autoplay=True,
+                    interactive=False,
+                )
                 components["metrics"] = gr.HTML("&nbsp;", elem_id="metrics_bar")
 
         # 🎤 Microphone controls (single source of truth)
