@@ -11,7 +11,7 @@ import numpy as np
 import pyaudio
 
 import config as cfg
-from backend.util.paths import ensure_temp_dir
+from backend.util.paths import ensure_temp_dir, temp_unique_path
 from audio.utils import suppress_alsa_warnings_if_linux
 
 log = logging.getLogger("jarvin.mic")
@@ -269,6 +269,9 @@ def record_and_prepare_chunk(
 ) -> str:
     """
     Records a chunk and returns the path to the amplified WAV.
+
+    persist=False: writes to unique files in the configured temp dir to avoid
+    clobbering under concurrent or rapid successive calls.
     """
     s = cfg.settings
     seconds = s.record_seconds if seconds is None else seconds
@@ -284,9 +287,9 @@ def record_and_prepare_chunk(
         amplify_wav(raw, amp, factor=amp_factor)
         return amp
     else:
-        ensure_temp()
-        raw = os.path.join(s.temp_dir, "live_raw.wav")
-        amp = os.path.join(s.temp_dir, "live_amp.wav")
+        # Use unique temp paths to prevent races and stale reads
+        raw = temp_unique_path(prefix=f"{basename}_raw_", suffix=".wav")
+        amp = temp_unique_path(prefix=f"{basename}_amp_", suffix=".wav")
         record_wav(raw, record_seconds=seconds, device_index=device_index)
         amplify_wav(raw, amp, factor=amp_factor)
         if s.delete_raw_after_amplify:

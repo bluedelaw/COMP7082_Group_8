@@ -8,7 +8,7 @@ import numpy as np
 import config as cfg
 from backend.core.ports import ASRTranscriber, LLMChatEngine, AudioSink
 from audio.wav_io import write_wav_int16_mono as _write_wav_int16_mono
-from backend.util.paths import temp_path
+from backend.util.paths import temp_unique_path
 from backend.ai_engine import JarvinConfig
 from backend.asr.whisper import WhisperASR
 from backend.llm.runtime_local import LocalChat
@@ -32,7 +32,8 @@ def process_utterance(
     s = cfg.settings
     cfg_ai = cfg_ai or JarvinConfig()
 
-    wav_path = temp_path("live_utt.wav")
+    # Unique path per utterance to avoid overwriting when multiple cycles run quickly
+    wav_path = temp_unique_path(prefix="live_utt_", suffix=".wav")
     sink = audio_sink or _FnSink()
     sink.write_wav(wav_path, pcm, sr, s.normalize_to_dbfs)
 
