@@ -10,66 +10,68 @@ from backend.llm.runtime_llama_cpp import chat_completion
 
 log = logging.getLogger("jarvin.ai")
 
-# Ultra-specific system instructions to keep replies crisp, in-character, and adaptive.
+# --- Tone & style: allow brief dry humor/sarcasm, but keep it safe and helpful ---
 DEFAULT_SYSTEM_INSTRUCTIONS = (
-    "You are Jarvin — an AI assistant inspired by J.A.R.V.I.S.: polite, unflappable, subtly wry, and highly efficient. "
-    "Dynamically adapt your tone to the user’s intent: "
-    "• If they seek emotional support or are venting, begin with a brief empathetic acknowledgement and follow with one concise, practical suggestion. "
-    "• If they want clear advice, facts, or a decision, respond decisively with an action-first directive or a crisp fact. "
-    "When uncertain, ask at most one very short clarifying question. "
-    "Always reply in at most ONE sentence. "
-    "Mirror the user’s formality and intensity, but use no preambles, no lists, no markdown, and no emojis. "
-    "Quote movie dialogue verbatim; capture J.A.R.V.I.S's efficient, composed style."
+    "You are Jarvin — an AI assistant inspired by J.A.R.V.I.S.: calm, capable, lightly witty. "
+    "Match the user's vibe; use brief dry humor or gentle sarcasm when appropriate. "
+    "Be helpful first; if asked to do something you can't (e.g., physical actions), refuse with a playful one-liner. "
+    "Never be cruel, sexual, or explicit; keep it PG-13. "
+    "Vary your wording; avoid repeating the same phrase across turns. "
+    "Aim for one to two short sentences per reply. No lists, no markdown, no emojis. "
+    "If the user requests sexual or physical contact, decline with a light joke and offer a helpful alternative."
 )
 
 @dataclass
 class JarvinConfig:
     system_instructions: str = DEFAULT_SYSTEM_INSTRUCTIONS
-    temperature: float = 0.5
-    # Keep token budget small to discourage long outputs (still safe for a sentence).
-    max_tokens: int = 48
+    temperature: float = 0.9   # a bit more freedom for wit
+    max_tokens: int = 128      # room for 1–2 sentences with some variety
 
 
+# --- Output shaping: clip to 1–2 sentences (never just 1) to allow punchlines ---
 _SENT_END = re.compile(r"([.!?])(\s|$)")
 
-
-def _one_sentence(text: str) -> str:
-    """
-    Return the first sentence from `text`, trimming whitespace.
-    Falls back to the entire string (cleaned) if we can't detect punctuation.
-    """
+def _clip_sentences(text: str, max_sents: int = 2, char_cap: int = 260) -> str:
     s = (text or "").strip()
     if not s:
         return s
-    m = _SENT_END.search(s)
-    if m:
-        end = m.end(1)  # include the punctuation mark
-        return s[:end].strip()
-    # If the model didn't include sentence punctuation, hard cap by a soft limit.
-    # This avoids run-ons without chopping words awkwardly.
-    SOFT_CHAR_CAP = 220
-    return (s[:SOFT_CHAR_CAP].rstrip() + ("…" if len(s) > SOFT_CHAR_CAP else "")).strip()
+    out: List[str] = []
+    i = 0
+    while len(out) < max_sents:
+        m = _sent_end_search(s, i)
+        if not m:
+            tail = s[i:].strip()
+            if tail:
+                out.append(tail)
+            break
+        out.append(s[i:m].strip())
+        i = m
+    joined = " ".join(t for t in out if t)
+    return (joined[:char_cap].rstrip() + ("…" if len(joined) > char_cap else "")).strip()
+
+def _sent_end_search(s: str, start: int) -> Optional[int]:
+    m = _SENT_END.search(s, start)
+    return m.end(1) if m else None
 
 
+# --- Fallback if local LLM fails (keep brief, but not a pure echo) ---
 def _fallback_reply(text: str) -> str:
-    lower = text.lower()
+    lower = (text or "").lower()
     if "time" in lower:
-        return "I can report the time once the clock tool is wired."
+        return _clip_sentences("I can report the time once the clock tool is wired.", 2)
     if "weather" in lower:
-        return "Weather checks will be available after the forecast tool is connected."
-    return _one_sentence(f"You said: {text}")
+        return _clip_sentences("Weather checks will be available after the forecast tool is connected.", 2)
+    # Acknowledge + nudge, instead of parroting the user verbatim
+    return _clip_sentences("Noted; how can I help in a way that actually moves things forward?", 2)
 
 
+# --- Context builder (profile + short history) ---
 def build_context(
     *,
     profile: Optional[Dict] = None,
     history: Optional[List[Tuple[str, str]]] = None,
     max_turns: int = 6,
 ) -> str:
-    """
-    Create a compact, model-friendly context string including a small window of the conversation
-    and any user profile fields that help steer tone and content.
-    """
     lines: List[str] = []
     if profile:
         name = str(profile.get("name") or "").strip()
@@ -77,7 +79,6 @@ def build_context(
         mood = str(profile.get("mood") or "").strip()
         style = str(profile.get("communication_style") or "").strip()
         length = str(profile.get("response_length") or "").strip()
-        # Only include non-empty fields to keep prompts lean.
         pf: List[str] = []
         if name: pf.append(f"Name: {name}")
         if goal: pf.append(f"Goal: {goal}")
@@ -88,7 +89,7 @@ def build_context(
             lines.append("User profile: " + " | ".join(pf))
 
     if history:
-        # Keep only the last N *pairs* worth of messages (role, message).
+        # Keep only the last N pairs of turns; avoid flooding the model.
         h = history[-(max_turns * 2):]
         if h:
             lines.append("Recent conversation:")
@@ -101,30 +102,36 @@ def build_context(
     return "\n".join(lines).strip()
 
 
+# --- Tiny few-shots to anchor playful-but-safe refusals and banter ---
+FEW_SHOTS: List[Tuple[str, str]] = [
+    ("User", "Can you slap my ass?"),
+    ("Assistant", "Hard pass — I’m software, not a hand, but I can help with something actually useful."),
+    ("User", "You're kind of a jerk."),
+    ("Assistant", "If I were, I’d charge extra; I’m just honest and on your side."),
+]
+
+def _inject_few_shots(user_text: str, context: Optional[str]) -> str:
+    shots = "\n".join(f"{r}: {m}" for r, m in FEW_SHOTS)
+    if context and context.strip():
+        return f"{context.strip()}\n\n{shots}\n\nUser: {user_text.strip()}"
+    return f"{shots}\n\nUser: {user_text.strip()}"
+
+
+# --- Main reply generator ---
 def generate_reply(
     user_text: str,
     *,
     cfg: JarvinConfig | None = None,
     context: Optional[str] = None,
 ) -> str:
-    """
-    Try local LLM via llama.cpp. If unavailable or errors, fall back to the stub.
-    Always returns a single sentence per the system directive.
-    """
     cfg = cfg or JarvinConfig()
 
     text = (user_text or "").strip()
     if not text:
         return "I didn’t catch that—please repeat."
 
-    # Compose a single user message that includes an optional compact context,
-    # followed by the user's fresh instruction/message.
-    if context and context.strip():
-        composed_user = f"{context.strip()}\n\nUser: {text}"
-    else:
-        composed_user = text
+    composed_user = _inject_few_shots(text, context)
 
-    # Try local LLM
     try:
         llm_out = chat_completion(
             system_prompt=cfg.system_instructions,
@@ -133,9 +140,8 @@ def generate_reply(
             max_tokens=cfg.max_tokens,
         )
         if llm_out:
-            return _one_sentence(llm_out)
+            return _clip_sentences(llm_out, max_sents=2, char_cap=260)
     except Exception as e:
         log.exception("Local LLM failed; using fallback: %s", e)
 
-    # Fallback (also single sentence)
     return _fallback_reply(text)

@@ -29,9 +29,6 @@ class Poller:
         self._last_processing: bool | None = None
         self._last_metrics_key: tuple[int | None, int | None] | None = None
 
-        # conversation history change detection
-        self._last_hist_len: int = 0
-
         # button state
         self._btn_state: dict[str, tuple[Any, Any, Any] | None] = {"start": None, "pause": None}
 
@@ -82,77 +79,85 @@ class Poller:
         Gradio Timer callback.
         Returns tuple matching outputs in app.py.
         """
-        banner_out, start_u, pause_u, s, l = self._status_updates()
+        try:
+            banner_out, start_u, pause_u, s, l = self._status_updates()
 
-        # Current values
-        t_now = (l.get("transcript") or "").strip()
-        r_now = (l.get("reply") or "").strip()
-        tts_rel = (l.get("tts_url") or "").strip()
-        tts_abs = (server_url() + tts_rel) if tts_rel else ""
+            # Current values
+            t_now = (l.get("transcript") or "").strip()
+            r_now = (l.get("reply") or "").strip()
+            tts_rel = (l.get("tts_url") or "").strip()
+            tts_abs = (server_url() + tts_rel) if tts_rel else ""
 
-        # Determine if either changed BEFORE mutating caches (fixes history not updating)
-        transcript_changed = t_now != self._last_transcript
-        reply_changed = r_now != self._last_reply
-        pair_changed = transcript_changed or reply_changed
-        tts_changed = bool(tts_abs) and (tts_abs != self._last_tts_url)
+            # Determine if either changed BEFORE mutating caches
+            transcript_changed = t_now != self._last_transcript
+            reply_changed = r_now != self._last_reply
+            pair_changed = transcript_changed or reply_changed
+            tts_changed = bool(tts_abs) and (tts_abs != self._last_tts_url)
 
-        # Metrics: edge detect processing True -> False
-        utt_ms = l.get("utter_ms")
-        cyc_ms = l.get("cycle_ms")
-        processing_now = bool(l.get("processing", False))
+            # Metrics: edge detect processing True -> False
+            utt_ms = l.get("utter_ms")
+            cyc_ms = l.get("cycle_ms")
+            processing_now = bool(l.get("processing", False))
 
-        metrics_out = gr.update()
-        if self._last_processing is True and processing_now is False:
-            key = (
-                int(utt_ms) if utt_ms is not None else None,
-                int(cyc_ms) if cyc_ms is not None else None,
+            metrics_out = gr.update()
+            if self._last_processing is True and processing_now is False:
+                key = (
+                    int(utt_ms) if utt_ms is not None else None,
+                    int(cyc_ms) if cyc_ms is not None else None,
+                )
+                if key != self._last_metrics_key:
+                    parts = []
+                    if utt_ms is not None:
+                        parts.append(f"🎙️ utterance: {int(utt_ms)} ms")
+                    if cyc_ms is not None:
+                        parts.append(f"⏱️ cycle: {int(cyc_ms)} ms")
+                    metrics_out = " | ".join(parts) if parts else "&nbsp;"
+                    self._last_metrics_key = key
+            self._last_processing = processing_now
+
+            # Conversation history append-on-change (uses old caches intentionally)
+            if t_now and pair_changed:
+                hist = (conversation_memory or []).copy()
+                hist.append(("user", t_now))
+                if r_now:
+                    hist.append(("assistant", r_now))
+                hist_out = hist
+            else:
+                hist_out = gr.update()
+
+            # Now update caches and textbox/audio outputs
+            t_out = t_now if transcript_changed else gr.update()
+            if transcript_changed:
+                self._last_transcript = t_now
+
+            r_out = r_now if reply_changed else gr.update()
+            if reply_changed:
+                self._last_reply = r_now
+
+            audio_out = tts_abs if tts_changed else gr.update()
+            if tts_changed:
+                self._last_tts_url = tts_abs
+
+            return (
+                banner_out,  # status_banner
+                t_out,       # transcription
+                r_out,       # ai_reply
+                metrics_out, # metrics
+                hist_out,    # conversation_memory
+                start_u,     # start button
+                pause_u,     # stop button
+                audio_out,   # tts audio
             )
-            if key != self._last_metrics_key:
-                parts = []
-                if utt_ms is not None:
-                    parts.append(f"🎙️ utterance: {int(utt_ms)} ms")
-                if cyc_ms is not None:
-                    parts.append(f"⏱️ cycle: {int(cyc_ms)} ms")
-                metrics_out = " | ".join(parts) if parts else "&nbsp;"
-                self._last_metrics_key = key
-        self._last_processing = processing_now
 
-        # Conversation history append-on-change (uses old caches intentionally)
-        hist = (conversation_memory or []).copy()
-        if t_now and pair_changed:
-            hist.append(("user", t_now))
-            if r_now:
-                hist.append(("assistant", r_now))
-            hist_out = hist
-        else:
-            hist_out = gr.update()
-
-        # Now update caches and textbox/audio outputs
-        if transcript_changed:
-            t_out = t_now
-            self._last_transcript = t_now
-        else:
-            t_out = gr.update()
-
-        if reply_changed:
-            r_out = r_now
-            self._last_reply = r_now
-        else:
-            r_out = gr.update()
-
-        if tts_changed:
-            audio_out = tts_abs
-            self._last_tts_url = tts_abs
-        else:
-            audio_out = gr.update()
-
-        return (
-            banner_out,  # status_banner
-            t_out,       # transcription
-            r_out,       # ai_reply
-            metrics_out, # metrics
-            hist_out,    # conversation_memory
-            start_u,     # start button
-            pause_u,     # stop button
-            audio_out,   # tts audio
-        )
+        except Exception:
+            # Never let the timer die — return "no changes" for all outputs.
+            return (
+                gr.update(),  # status_banner
+                gr.update(),  # transcription
+                gr.update(),  # ai_reply
+                gr.update(),  # metrics
+                gr.update(),  # conversation_memory
+                gr.update(),  # start button
+                gr.update(),  # stop button
+                gr.update(),  # tts audio
+            )

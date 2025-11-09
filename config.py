@@ -15,9 +15,15 @@ Override via env vars (prefix JARVIN_, case-insensitive), e.g.:
   JARVIN_SERVER_PORT=8000
   JARVIN_GRADIO_AUTO_OPEN=true
   JARVIN_GRADIO_OPEN_DELAY_SEC=1.0
+
+  # NEW: persistence
+  JARVIN_DATA_DIR=./data
+  JARVIN_DB_FILENAME=jarvin.sqlite3
+  JARVIN_DB_WAL=true
 """
 from __future__ import annotations
 
+import os
 from typing import List, Optional, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -111,12 +117,24 @@ class Settings(BaseSettings):
     gradio_auto_open: bool = True
     gradio_open_delay_sec: float = 1.0
 
+    # ---- Persistent data (NEW) ----
+    data_dir: str = "data"
+    db_filename: str = "jarvin.sqlite3"
+    db_wal: bool = True  # enable WAL for safe concurrent reads/writes
+
     # pydantic-settings v2 config (replaces inner Config)
     model_config = SettingsConfigDict(
         env_prefix="JARVIN_",
         case_sensitive=False,
         extra="ignore",  # ignore stray envs to be safe
     )
+
+    @property
+    def db_path(self) -> str:
+        # Resolve to absolute path and ensure folder exists when accessed
+        path = os.path.abspath(os.path.join(self.data_dir, self.db_filename))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
 
     @field_validator("log_level", mode="before")
     @classmethod

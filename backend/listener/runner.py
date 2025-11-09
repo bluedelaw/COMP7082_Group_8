@@ -15,7 +15,6 @@ from backend.listener.live_state import set_snapshot, set_status
 from backend.listener.loop import AudioLoop
 from backend.core.pipeline import process_utterance
 from backend.asr import WhisperASR
-from memory.conversation import append_turn  # persist turns from the live pipeline
 
 log = logging.getLogger("jarvin")
 
@@ -149,11 +148,8 @@ async def run_listener(stop_event: asyncio.Event, initial_delay: float = 0.2) ->
                     log.info("📣  [reply] %s", reply)
                 log.info("⏱️  [cycle] done in %d ms\n", cycle_ms)
 
-                # Persist turn for future context (live pipeline)
-                if text:
-                    append_turn("user", text)
-                if reply:
-                    append_turn("assistant", reply)
+                # NOTE: Turns are already persisted inside process_utterance().
+                #       Do NOT append again here (that caused duplicate history).
 
                 tts_url = f"/_temp/{os.path.basename(tts_wav_path)}" if tts_wav_path else None
                 set_snapshot(

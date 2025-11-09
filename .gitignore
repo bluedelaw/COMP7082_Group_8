@@ -20,6 +20,7 @@ venv/
 
 # Local data / temp
 temp/
+data/
 *.wav
 *.mp3
 *.flac
