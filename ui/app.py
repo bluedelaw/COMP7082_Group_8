@@ -6,7 +6,7 @@ import gradio as gr
 from ui.styles import CSS
 from ui.components import build_header, build_profile_tab, build_live_tab, init_state
 from ui.handlers import bind_profile_actions, bind_live_actions
-from ui.actions import update_history_display, load_user_profile_fields
+from ui.actions import update_history_display, load_user_profile_fields, get_conversation_menu
 from ui.poller import Poller
 
 
@@ -24,16 +24,20 @@ def create_app():
         bind_profile_actions(components)
         bind_live_actions(components)
 
-        # --- Single page-load initializer (devices + saved profile) ---
+        # --- Single page-load initializer (devices + saved profile + conversations) ---
         def _init_page():
             # 1) Device UI (choices + selected + label)
             choices_update, label = components["_init_devices_fn"]()  # returns (Dropdown.update, label)
             # 2) Saved profile prefill
             name, goal, mood, style, length, status = load_user_profile_fields()
+            # 3) Conversations dropdown
+            conv_choices, conv_selected, conv_subtitle = get_conversation_menu()
             return (
                 choices_update,   # device dropdown update (choices + selected)
                 label,            # device_current Markdown
-                name, goal, mood, style, length, status  # profile fields + status text
+                name, goal, mood, style, length, status,  # profile fields + status text
+                gr.update(choices=conv_choices, value=conv_selected),  # conversations dropdown
+                conv_subtitle,
             )
 
         demo.load(
@@ -47,6 +51,8 @@ def create_app():
                 components["communication_style"],
                 components["response_length"],
                 components["status"],
+                components["conversation_dropdown"],
+                components["conv_subtitle"],
             ],
             show_progress=False,
         )

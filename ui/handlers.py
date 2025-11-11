@@ -11,6 +11,12 @@ from ui.actions import (
     clear_conversation_history,
     update_history_display,
     get_save_confirmation,
+    # NEW convo controls
+    get_conversation_menu,
+    activate_conversation,
+    create_conversation,
+    rename_active_conversation,
+    delete_active_conversation,
 )
 from ui.api import (
     api_post_start,
@@ -75,7 +81,7 @@ def bind_profile_actions(components: dict) -> None:
         except Exception:
             return None
 
-    def _load_devices_ui() -> Tuple[List[str], str | None, str]:
+    def _load_devices_ui():
         t0 = time.perf_counter()
         data = api_get_audio_devices()
         choices, selected, label = _present_from_data(data)
@@ -84,15 +90,12 @@ def bind_profile_actions(components: dict) -> None:
         return choices, selected, label
 
     def _refresh_devices():
-        log.debug("UI manual refresh devices clicked")
         choices, selected, label = _load_devices_ui()
         return gr.update(choices=choices, value=selected), label
 
     def _apply_device(value: str | None):
-        log.debug("UI device dropdown changed -> raw_value=%r", value)
         idx = _value_to_index(value)
         if idx is None:
-            log.debug("UI device change ignored: could not parse index from %r", value)
             return gr.update(), "⚠️ Invalid selection."
 
         before = api_get_audio_devices()
@@ -100,10 +103,8 @@ def bind_profile_actions(components: dict) -> None:
         cur_name = before.get("selected_name")
         if cur_idx is not None and idx == cur_idx:
             choices, selected, label = _present_from_data(before)
-            log.debug("UI device change is no-op (already selected index=%s name=%s)", str(cur_idx), _short(cur_name))
             return gr.update(choices=choices, value=selected), f"✅ Already using {label}"
 
-        log.info("UI applying new device index=%d (prev=%s:%s) -> POST /audio/select", idx, str(cur_idx), _short(cur_name))
         t0 = time.perf_counter()
         res = api_post_audio_select(idx, restart=True)
         if not res.get("ok", False):
@@ -114,9 +115,6 @@ def bind_profile_actions(components: dict) -> None:
 
         after = api_get_audio_devices()
         choices, selected, label = _present_from_data(after)
-        dt = (time.perf_counter() - t0) * 1000
-        log.info("UI device applied in %.1f ms -> now selected index=%s name=%s",
-                 dt, str(after.get("selected_index")), _short(after.get("selected_name")))
         return gr.update(choices=choices, value=selected), f"✅ Switched to {label}"
 
     components["device_refresh_btn"].click(
@@ -135,32 +133,54 @@ def bind_profile_actions(components: dict) -> None:
     components["_init_devices_fn"] = _refresh_devices
 
 
-# ---------- Live tab bindings (no generator streams; poller owns updates) ----------
+# ---------- Live tab bindings (plus NEW conversation menu) ----------
 
 def bind_live_actions(components: dict) -> None:
-    # Clear conversation -> wipe state + textboxes
+    # ---- Conversations panel wiring ----
+    def _load_conversations_ui():
+        choices, selected, subtitle = get_conversation_menu()
+        return gr.update(choices=choices, value=selected), subtitle
+
+    def _on_select_conversation(value):
+        (choices, selected, subtitle), history = activate_conversation(value)
+        return (
+            gr.update(choices=choices, value=selected),  # dropdown
+            subtitle,                                    # subtitle
+            history,                                     # state: conversation_memory
+            "", "",                                      # reset "Last Heard" + "Last Reply" boxes
+        )
+
+    def _on_new_conversation(title):
+        (choices, selected, subtitle), history = create_conversation(title)
+        return (
+            gr.update(choices=choices, value=selected),
+            subtitle,
+            history,
+            "", "",
+        )
+
+    def _on_rename_conversation(title):
+        (choices, selected, subtitle) = rename_active_conversation(title)
+        return (
+            gr.update(choices=choices, value=selected),
+            subtitle,
+        )
+
+    def _on_delete_conversation():
+        (choices, selected, subtitle), history = delete_active_conversation()
+        return (
+            gr.update(choices=choices, value=selected),
+            subtitle,
+            history,
+            "", "",
+        )
+
+    # Clear conversation -> wipe active convo only
     def _clear_all_conversation():
         history = clear_conversation_history()
         return "", "", history
 
-    components["clear_btn"].click(
-        fn=_clear_all_conversation,
-        outputs=[
-            components["current_transcription"],
-            components["current_reply"],
-            components["conversation_memory"],
-        ],
-    ).then(
-        fn=lambda ct, cr: (ct, cr),
-        inputs=[components["current_transcription"], components["current_reply"]],
-        outputs=[components["transcription"], components["ai_reply"]],
-    ).then(
-        fn=update_history_display,
-        inputs=[components["conversation_memory"]],
-        outputs=[components["history_display"]],
-    )
-
-    # Start / Stop / Shutdown simply flip server state; poller reflects UI promptly
+    # Buttons (listener)
     def _start_listener():
         api_post_start()
         s = api_get_status()
@@ -179,6 +199,68 @@ def bind_live_actions(components: dict) -> None:
         start_u, pause_u = button_updates(False, disable_all=True)
         return ('<span class="status-badge status-stopped">Shutting down…</span>', start_u, pause_u)
 
+    # Wire the conversation controls
+    components["conversation_dropdown"].change(
+        fn=_on_select_conversation,
+        inputs=[components["conversation_dropdown"]],
+        outputs=[
+            components["conversation_dropdown"],
+            components["conv_subtitle"],
+            components["conversation_memory"],
+            components["transcription"],
+            components["ai_reply"],
+        ],
+        show_progress=False,
+    )
+    components["new_conv_btn"].click(
+        fn=_on_new_conversation,
+        inputs=[components["new_conv_title"]],
+        outputs=[
+            components["conversation_dropdown"],
+            components["conv_subtitle"],
+            components["conversation_memory"],
+            components["transcription"],
+            components["ai_reply"],
+        ],
+    )
+    components["rename_conv_btn"].click(
+        fn=_on_rename_conversation,
+        inputs=[components["rename_conv_title"]],
+        outputs=[
+            components["conversation_dropdown"],
+            components["conv_subtitle"],
+        ],
+    )
+    components["delete_conv_btn"].click(
+        fn=_on_delete_conversation,
+        outputs=[
+            components["conversation_dropdown"],
+            components["conv_subtitle"],
+            components["conversation_memory"],
+            components["transcription"],
+            components["ai_reply"],
+        ],
+    )
+
+    # Clear current active conversation
+    components["clear_btn"].click(
+        fn=_clear_all_conversation,
+        outputs=[
+            components["current_transcription"],
+            components["current_reply"],
+            components["conversation_memory"],
+        ],
+    ).then(
+        fn=lambda ct, cr: (ct, cr),
+        inputs=[components["current_transcription"], components["current_reply"]],
+        outputs=[components["transcription"], components["ai_reply"]],
+    ).then(
+        fn=update_history_display,
+        inputs=[components["conversation_memory"]],
+        outputs=[components["history_display"]],
+    )
+
+    # Start / Stop / Shutdown
     components["start_btn"].click(
         fn=_start_listener,
         outputs=[components["status_banner"], components["start_btn"], components["stop_btn"]],

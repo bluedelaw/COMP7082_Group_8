@@ -1,21 +1,19 @@
 # ui/components.py
 from __future__ import annotations
-
 import gradio as gr
-
 
 def init_state(components: dict) -> None:
     """Create global Gradio States used across tabs."""
     components["user_context"] = gr.State({})
-    components["conversation_memory"] = gr.State([])
+    components["conversation_memory"] = gr.State([])  # active conversation history
     components["current_transcription"] = gr.State("")
     components["current_reply"] = gr.State("")
-
+    # Hold the conversation dropdown value to prevent flicker on refresh
+    components["conversation_dropdown_value"] = gr.State(None)
 
 def build_header() -> None:
     with gr.Row():
         gr.Markdown("<h1 style='margin:0'>Jarvin - Your AI Assistant</h1>")
-
 
 def build_profile_tab(components: dict) -> None:
     with gr.Tab("👤 User Profile"):
@@ -43,7 +41,6 @@ def build_profile_tab(components: dict) -> None:
         components["save_btn"] = gr.Button("💾 Save Profile Settings")
         components["status"] = gr.Markdown("", elem_classes="status-text")
 
-
 def build_live_tab(components: dict) -> None:
     with gr.Tab("🤖 Jarvin Live"):
         gr.Markdown("### 🎙️ Live listening (noise gate + VAD)")
@@ -57,7 +54,24 @@ def build_live_tab(components: dict) -> None:
                     components["stop_btn"] = gr.Button("⏸ Pause Listener")
                 with gr.Row(elem_classes="button_row"):
                     components["shutdown_btn"] = gr.Button("🛑 Shutdown Jarvin")
-                components["clear_btn"] = gr.Button("🗑️ Clear Conversation", elem_classes="clear-btn")
+                # ---- Conversations panel ----
+                with gr.Accordion("🗂️ Conversations", open=True):
+                    components["conv_subtitle"] = gr.Markdown("", elem_classes="status-text")
+                    with gr.Row():
+                        components["conversation_dropdown"] = gr.Dropdown(
+                            label="Select",
+                            choices=[],
+                            value=None,
+                            interactive=True,
+                        )
+                    with gr.Row():
+                        components["new_conv_title"] = gr.Textbox(label="New conversation title", placeholder="e.g., Trip planning")
+                        components["new_conv_btn"] = gr.Button("➕ New")
+                    with gr.Row():
+                        components["rename_conv_title"] = gr.Textbox(label="Rename to…", placeholder="e.g., Weekend tasks")
+                        components["rename_conv_btn"] = gr.Button("✏️ Rename")
+                        components["delete_conv_btn"] = gr.Button("🗑️ Delete", elem_classes="clear-btn")
+                components["clear_btn"] = gr.Button("🧹 Clear This Conversation", elem_classes="clear-btn")
 
             # Live column
             with gr.Column(scale=2, elem_id="live_col"):
@@ -78,7 +92,6 @@ def build_live_tab(components: dict) -> None:
                     interactive=False,
                     show_copy_button=True,
                 )
-                # Autoplay synthesized TTS when a new reply arrives
                 components["tts_audio"] = gr.Audio(
                     label="🔊 Spoken Reply",
                     autoplay=True,
@@ -86,7 +99,7 @@ def build_live_tab(components: dict) -> None:
                 )
                 components["metrics"] = gr.HTML("&nbsp;", elem_id="metrics_bar")
 
-        # 🎤 Microphone controls (single source of truth)
+        # 🎤 Microphone controls
         with gr.Accordion("🎤 Microphone", open=False):
             components["device_current"] = gr.Markdown("", elem_classes="status-text")
             with gr.Row():
@@ -105,7 +118,6 @@ def build_live_tab(components: dict) -> None:
                 max_lines=10,
                 interactive=False,
                 show_copy_button=True,
-                # removed unsupported `autoscroll` for Gradio 4.44.x
                 elem_id="history_box",
                 elem_classes=["conversation-history"],
             )
