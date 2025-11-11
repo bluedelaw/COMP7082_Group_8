@@ -5,8 +5,11 @@ import logging
 import config as cfg
 from backend.util.hw_detect import detect_hardware
 from backend.llm.model_manager import pick_model, ensure_download, GGUFModelSpec
+import os
 
 log = logging.getLogger("jarvin.llm")
+
+
 
 async def provision_llm() -> str | None:
     s = cfg.settings

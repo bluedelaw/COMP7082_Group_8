@@ -6,6 +6,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Optional
 
+import os
+
 import psutil
 import torch
 
@@ -46,15 +48,22 @@ def detect_hardware() -> HardwareProfile:
     cpu_cores = psutil.cpu_count(logical=True) or 1
     ram_gb = round(psutil.virtual_memory().total / (1024 ** 3), 2)
 
+    # --- NVIDIA GPU detection ---
     has_nvidia = torch.cuda.is_available()
-    vram = _nvidia_vram_gb() if has_nvidia else None
     cuda_name = None
+    vram_gb = None
+
     if has_nvidia:
         try:
-            cuda_name = torch.version.cuda
+            device = torch.device("cuda:0")
+            props = torch.cuda.get_device_properties(device)
+            cuda_name = props.name
+            vram_gb = round(props.total_memory / (1024 ** 3), 2)
         except Exception:
             cuda_name = None
+            vram_gb = None
 
+    # --- MPS (macOS Metal) detection ---
     has_mps = False
     try:
         has_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
@@ -68,6 +77,6 @@ def detect_hardware() -> HardwareProfile:
         ram_gb=ram_gb,
         has_nvidia=has_nvidia,
         cuda_name=cuda_name,
-        vram_gb=vram,
+        vram_gb=vram_gb,
         has_mps=has_mps,
     )
