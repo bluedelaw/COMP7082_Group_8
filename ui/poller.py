@@ -14,16 +14,17 @@ class Poller:
     """
     Encapsulates the UI polling state so the UI code in app.py stays small.
 
-    Key behavior for your issue:
-      - The timer NEVER touches the chat history Markdown component.
+    Key behavior:
+      - The timer NEVER touches chat_history, timestamps, or metrics HTML directly.
       - It only updates:
           * status banner
-          * metrics
           * conversation_memory (when a NEW utterance appears)
           * start/stop buttons
           * TTS audio URL
-          * live_seq (hidden state) when it actually appended a new message
-      - A separate .change handler on live_seq is what re-renders chat_history.
+          * live_seq (hidden seq state)
+          * utter_ts_state / reply_ts_state (hidden)
+          * metrics_state / metrics_seq (hidden)
+      - `.change` handlers on live_seq and metrics_seq do the actual rendering.
     """
 
     def __init__(self) -> None:
@@ -32,7 +33,6 @@ class Poller:
 
         # metrics edge detection (processing True -> False)
         self._last_processing: bool | None = None
-        self._last_metrics_key: tuple[int | None, int | None] | None = None
 
         # audio
         self._last_tts_url: str | None = None
@@ -46,6 +46,14 @@ class Poller:
         # last utterance sequence from backend (/live.seq) that actually
         # produced a NEW message in conversation_memory
         self._last_seq: int | None = None
+
+        # last seen timestamps so we only update state when values change
+        self._last_utter_ts: Any = None
+        self._last_reply_ts: Any = None
+
+        # metrics string + sequence id for metrics_seq
+        self._last_metrics_val: str | None = None
+        self._metrics_seq: int = 0
 
     @staticmethod
     def _norm_btn_state(u: dict) -> tuple[Any, Any, Any]:
@@ -99,12 +107,15 @@ class Poller:
 
         Returns (matching outputs wired in app.py):
           - status_banner
-          - metrics
           - conversation_memory (possibly updated, else gr.update())
           - start_btn
           - stop_btn
           - tts_audio
           - live_seq (int) – ONLY changes when a NEW message was appended
+          - utter_ts_state – raw utterance timestamp (only when changed)
+          - reply_ts_state – raw reply timestamp (only when changed)
+          - metrics_state – metrics string (only when changed)
+          - metrics_seq – int, only when metrics_state changes
         """
         try:
             banner_out, start_u, pause_u, s, l = self._status_updates()
@@ -119,31 +130,40 @@ class Poller:
             seq_raw = l.get("seq")
             seq = seq_raw if isinstance(seq_raw, int) else None
 
-            # Metrics: edge detect processing True -> False
+            # Timestamps from backend (adapt keys if your JSON differs)
+            utter_ts = l.get("utter_ts")   # e.g. utterance timestamp
+            reply_ts = l.get("reply_ts")   # e.g. reply timestamp
+
+            # Durations for metrics
             utt_ms = l.get("utter_ms")
             cyc_ms = l.get("cycle_ms")
             processing_now = bool(l.get("processing", False))
 
-            metrics_out = gr.update()
+            # ---------- metrics_state / metrics_seq ----------
+            metrics_state_out = gr.update()
+            metrics_seq_out = gr.update()
+            metrics_str: str | None = None
+
+            # Edge detect processing True -> False to compute metrics once per cycle
             if self._last_processing is True and processing_now is False:
-                key = (
-                    int(utt_ms) if utt_ms is not None else None,
-                    int(cyc_ms) if cyc_ms is not None else None,
-                )
-                if key != self._last_metrics_key:
-                    parts: List[str] = []
-                    if utt_ms is not None:
-                        parts.append(f"🎙️ utterance: {int(utt_ms)} ms")
-                    if cyc_ms is not None:
-                        parts.append(f"⏱️ cycle: {int(cyc_ms)} ms")
-                    metrics_out = " | ".join(parts) if parts else "&nbsp;"
-                    self._last_metrics_key = key
+                parts: List[str] = []
+                if utt_ms is not None:
+                    parts.append(f"🎙️ utterance: {int(utt_ms)} ms")
+                if cyc_ms is not None:
+                    parts.append(f"⏱️ cycle: {int(cyc_ms)} ms")
+                metrics_str = " | ".join(parts) if parts else "&nbsp;"
+
+                if metrics_str != self._last_metrics_val:
+                    self._last_metrics_val = metrics_str
+                    self._metrics_seq += 1
+                    metrics_state_out = metrics_str
+                    metrics_seq_out = self._metrics_seq
+
             self._last_processing = processing_now
 
-            # Base history from state (copy so we never mutate the input list)
+            # ---------- conversation history + live_seq ----------
             orig_hist: List[Tuple[str, str]] = list(conversation_memory or [])
 
-            # --- History + live_seq: ONLY when seq advances with a real message ---
             hist_out = gr.update()
             seq_out = gr.update()
 
@@ -152,7 +172,7 @@ class Poller:
                 mutated = False
 
                 if t_now:
-                    # Avoid duplicating the last pair by content (covers page-load).
+                    # Avoid duplicating the last pair by content (page-load / refresh safety).
                     tail = orig_hist[-2:]
                     duplicate = False
                     if len(tail) == 2:
@@ -180,30 +200,48 @@ class Poller:
                     # Only in this case do we bump live_seq so .change fires.
                     seq_out = seq
 
-            # TTS audio update: only when URL changes
+            # ---------- timestamp states ----------
+            utter_state_out = gr.update()
+            reply_state_out = gr.update()
+
+            if utter_ts != self._last_utter_ts:
+                self._last_utter_ts = utter_ts
+                utter_state_out = utter_ts
+
+            if reply_ts != self._last_reply_ts:
+                self._last_reply_ts = reply_ts
+                reply_state_out = reply_ts
+
+            # ---------- TTS audio ----------
             audio_out = gr.update()
             if tts_abs and tts_abs != self._last_tts_url:
                 audio_out = tts_abs
                 self._last_tts_url = tts_abs
 
             return (
-                banner_out,   # status_banner
-                metrics_out,  # metrics
-                hist_out,     # conversation_memory
-                start_u,      # start button
-                pause_u,      # stop button
-                audio_out,    # tts audio
-                seq_out,      # live_seq (int)
+                banner_out,        # status_banner
+                hist_out,          # conversation_memory
+                start_u,           # start button
+                pause_u,           # stop button
+                audio_out,         # tts audio
+                seq_out,           # live_seq (int)
+                utter_state_out,   # utter_ts_state
+                reply_state_out,   # reply_ts_state
+                metrics_state_out, # metrics_state
+                metrics_seq_out,   # metrics_seq
             )
 
         except Exception:
             # Never let the timer die — return "no changes" for all outputs.
             return (
                 gr.update(),  # status_banner
-                gr.update(),  # metrics
                 gr.update(),  # conversation_memory
                 gr.update(),  # start button
                 gr.update(),  # stop button
                 gr.update(),  # tts audio
                 gr.update(),  # live_seq
+                gr.update(),  # utter_ts_state
+                gr.update(),  # reply_ts_state
+                gr.update(),  # metrics_state
+                gr.update(),  # metrics_seq
             )

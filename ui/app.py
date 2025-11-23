@@ -69,31 +69,70 @@ def create_app():
             show_progress=False,
         )
 
-        # ✅ Single polling loop: DOES NOT touch chat_history directly.
+        # ✅ Single polling loop: DOES NOT touch chat_history, timestamps, or metrics HTML directly.
         poller = Poller()
-        timer = gr.Timer(value=0.75, active=True)  # 750ms feels snappy without spamming
+        timer = gr.Timer(value=0.75, active=True)  # 750ms
         timer.tick(
             fn=poller.tick,
             inputs=[components["conversation_memory"]],
             outputs=[
                 components["status_banner"],        # status banner
-                components["metrics"],              # metrics
-                components["conversation_memory"],  # updated history (list[(role, msg)])
+                components["conversation_memory"],  # updated history
                 components["start_btn"],            # start button state
                 components["stop_btn"],             # stop button state
                 components["tts_audio"],            # TTS audio URL
                 components["live_seq"],             # hidden seq state
+                components["utter_ts_state"],       # hidden utterance timestamp
+                components["reply_ts_state"],       # hidden reply timestamp
+                components["metrics_state"],        # hidden metrics text
+                components["metrics_seq"],          # hidden metrics seq
             ],
             show_progress=False,
             concurrency_limit=1,
         )
 
-        # 🔁 Render the unified chat log ONLY when live_seq actually changes.
-        #    This decouples the chat div from the raw polling frequency.
+        # Helper: render chat + timestamps when live_seq changes (NEW utterance only)
+        def _render_history_and_timestamps(history, utter_ts_state, reply_ts_state):
+            chat_html = update_history_display(history)
+
+            if utter_ts_state is None:
+                utter_label = "&nbsp;"
+            else:
+                utter_label = f"Utterance: {utter_ts_state}"
+
+            if reply_ts_state is None:
+                reply_label = "&nbsp;"
+            else:
+                reply_label = f"Response: {reply_ts_state}"
+
+            return chat_html, utter_label, reply_label
+
+        # Chat + timestamps re-render ONLY when live_seq changes
         components["live_seq"].change(
-            fn=update_history_display,
-            inputs=[components["conversation_memory"]],
-            outputs=[components["chat_history"]],
+            fn=_render_history_and_timestamps,
+            inputs=[
+                components["conversation_memory"],
+                components["utter_ts_state"],
+                components["reply_ts_state"],
+            ],
+            outputs=[
+                components["chat_history"],
+                components["utter_ts_md"],
+                components["reply_ts_md"],
+            ],
+            show_progress=False,
+        )
+
+        # Helper: render metrics ONLY when metrics_seq changes AND metrics text changed
+        def _render_metrics(metrics_state):
+            if metrics_state is None:
+                return "&nbsp;"
+            return metrics_state
+
+        components["metrics_seq"].change(
+            fn=_render_metrics,
+            inputs=[components["metrics_state"]],
+            outputs=[components["metrics"]],
             show_progress=False,
         )
 

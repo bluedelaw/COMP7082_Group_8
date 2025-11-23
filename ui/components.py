@@ -7,10 +7,20 @@ def init_state(components: dict) -> None:
     """Create global Gradio States used across tabs."""
     components["user_context"] = gr.State({})
     components["conversation_memory"] = gr.State([])  # active conversation history
+
     # Hold the conversation dropdown value to prevent flicker on refresh (currently unused but harmless)
     components["conversation_dropdown_value"] = gr.State(None)
-    # NEW: hidden state that changes only when a NEW utterance is appended
+
+    # Hidden state that changes only when a NEW utterance is appended
     components["live_seq"] = gr.State(None)
+
+    # Hidden states for utterance/response timestamps (raw values, not rendered text)
+    components["utter_ts_state"] = gr.State(None)
+    components["reply_ts_state"] = gr.State(None)
+
+    # Hidden state for metrics text + its own sequence id
+    components["metrics_state"] = gr.State(None)
+    components["metrics_seq"] = gr.State(None)
 
 
 def build_header() -> None:
@@ -105,6 +115,12 @@ def build_live_tab(components: dict) -> None:
                     autoplay=True,
                     interactive=False,
                 )
+
+                # Rendered timestamps for utterance and response
+                components["utter_ts_md"] = gr.Markdown("&nbsp;", elem_classes="status-text")
+                components["reply_ts_md"] = gr.Markdown("&nbsp;", elem_classes="status-text")
+
+                # Metrics bar (decoupled from polling via metrics_state/metrics_seq)
                 components["metrics"] = gr.HTML("&nbsp;", elem_id="metrics_bar")
 
         # 🎤 Microphone controls
