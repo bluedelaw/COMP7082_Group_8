@@ -69,26 +69,28 @@ def create_app():
             show_progress=False,
         )
 
-        # ✅ Single polling loop drives status, metrics, TTS + appends to conversation_memory.
+        # ✅ Single polling loop: DOES NOT touch chat_history directly.
         poller = Poller()
         timer = gr.Timer(value=0.75, active=True)  # 750ms feels snappy without spamming
-        tick_evt = timer.tick(
+        timer.tick(
             fn=poller.tick,
             inputs=[components["conversation_memory"]],
             outputs=[
-                components["status_banner"],   # status
-                components["metrics"],         # metrics
+                components["status_banner"],        # status banner
+                components["metrics"],              # metrics
                 components["conversation_memory"],  # updated history (list[(role, msg)])
-                components["start_btn"],       # start button state
-                components["stop_btn"],        # stop button state
-                components["tts_audio"],       # TTS audio URL
+                components["start_btn"],            # start button state
+                components["stop_btn"],             # stop button state
+                components["tts_audio"],            # TTS audio URL
+                components["live_seq"],             # hidden seq state
             ],
             show_progress=False,
             concurrency_limit=1,
         )
 
-        # 🔁 Render the unified chat log from conversation_memory every tick
-        tick_evt.then(
+        # 🔁 Render the unified chat log ONLY when live_seq actually changes.
+        #    This decouples the chat div from the raw polling frequency.
+        components["live_seq"].change(
             fn=update_history_display,
             inputs=[components["conversation_memory"]],
             outputs=[components["chat_history"]],

@@ -9,6 +9,8 @@ def init_state(components: dict) -> None:
     components["conversation_memory"] = gr.State([])  # active conversation history
     # Hold the conversation dropdown value to prevent flicker on refresh (currently unused but harmless)
     components["conversation_dropdown_value"] = gr.State(None)
+    # NEW: hidden state that changes only when a NEW utterance is appended
+    components["live_seq"] = gr.State(None)
 
 
 def build_header() -> None:
