@@ -20,6 +20,7 @@ _CHAT_FORMAT_BY_LOGICAL: Dict[str, str] = {
     "neural-chat-7b": "llama-2",
 }
 
+
 def _infer_chat_format(spec: GGUFModelSpec) -> Optional[str]:
     fmt = _CHAT_FORMAT_BY_LOGICAL.get(spec.logical_name)
     if fmt:
@@ -33,12 +34,14 @@ def _infer_chat_format(spec: GGUFModelSpec) -> Optional[str]:
         return "llama-2"
     return None
 
+
 def _env_int(name: str, default: int) -> int:
     try:
         v = os.getenv(name)
         return int(v) if v is not None else default
     except Exception:
         return default
+
 
 @lru_cache(maxsize=1)
 def _load_llama() -> Optional["Llama"]:
@@ -79,6 +82,17 @@ def _load_llama() -> Optional["Llama"]:
         log.exception("Failed to load local LLM: %s", e)
         return None
 
+
+def ensure_llama_loaded() -> Optional["Llama"]:
+    """
+    Eagerly load the cached Llama instance.
+
+    Safe to call multiple times; returns the shared instance or None
+    if loading failed or llama-cpp-python is unavailable.
+    """
+    return _load_llama()
+
+
 def chat_completion(
     system_prompt: str,
     user_text: str,
@@ -105,4 +119,3 @@ def chat_completion(
     except Exception as e:
         log.exception("LLM chat completion failed: %s", e)
         return None
-

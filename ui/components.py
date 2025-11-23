@@ -104,12 +104,16 @@ def build_live_tab(components: dict) -> None:
             # Live / conversation column
             with gr.Column(scale=2, elem_id="live_col"):
                 gr.Markdown("#### 💬 Conversation")
-                # Single unified conversation log (ChatGPT-style bubbles)
-                components["chat_history"] = gr.Markdown(
-                    value="No conversation history yet.",
+
+                # Single unified conversation log as a Chatbot (one scrollable UI element)
+                components["chat_history"] = gr.Chatbot(
+                    value=[],
+                    label="",           # no title text
+                    show_label=False,   # hide the "Chatbot" label
                     elem_id="history_box",
                     elem_classes=["conversation-history"],
                 )
+
                 components["tts_audio"] = gr.Audio(
                     label="🔊 Spoken Reply",
                     autoplay=True,

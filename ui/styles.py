@@ -105,22 +105,10 @@ body {
     letter-spacing: 0.2px;
 }
 
-/* Pin heights of the two main text areas */
-#transcription_box textarea {
-    height: 56px !important;     /* ~2 lines */
-    min-height: 56px !important;
-    resize: none !important;
-}
-#ai_reply_box textarea {
-    height: 160px !important;    /* ~6-7 lines */
-    min-height: 160px !important;
-    resize: vertical;            /* allow manual, but has min-height */
-}
-
-/* Conversation history – fixed height and stable scrollbar */
+/* Conversation history – single scrollable Chatbot region (taller) */
 .conversation-history {
-    max-height: 320px;
-    height: 320px;
+    max-height: 640px;
+    height: 640px;
     overflow-y: auto !important;
     border: 1px solid #4b5563 !important;
     border-radius: 8px;
@@ -132,7 +120,7 @@ body {
 .conversation-history::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 4px; }
 .conversation-history::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
-/* Bubble-style alignment if the container renders HTML (Chatbot or Markdown) */
+/* (Legacy bubble styles kept; no longer used now that Chatbot handles layout)
 .chatline {
     display: flex;
     margin: 6px 0;
@@ -155,6 +143,7 @@ body {
     color: #f3f4f6;
     border-bottom-left-radius: 4px;
 }
+*/
 
 /* Minor: trim default markdown margins globally to avoid bumps */
 .gr-markdown, .gr-prose, .prose { margin-top: 0.25rem; margin-bottom: 0.25rem; }

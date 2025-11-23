@@ -1,7 +1,6 @@
 # ui/actions.py
 from __future__ import annotations
 from typing import Tuple, List, Dict
-import html
 
 from memory.conversation import (
     # Profile + history (scoped to ACTIVE conversation)
@@ -52,33 +51,41 @@ def clear_conversation_history():
 
 def update_history_display(history):
     """
-    Render the active conversation as a ChatGPT-style log:
+    Convert the flat [(role, message)] history into Chatbot-style
+    [[user_message, assistant_message], ...] pairs.
 
-      - user messages right-aligned
-      - assistant messages left-aligned
-
-    Uses .chatline.user / .chatline.assistant + .bubble classes
-    styled in ui/styles.py.
+    - Consecutive user messages get flushed with empty assistant text.
+    - Orphan assistant messages get paired with "" as the user side.
     """
     if not history:
-        return (
-            "<div class='chatline assistant'>"
-            "<div class='bubble'>No conversation history yet.</div>"
-            "</div>"
-        )
+        return []
 
-    lines = []
+    pairs: List[List[str]] = []
+    pending_user: str | None = None
+
     for role, message in history:
         if not message:
             continue
-        role_cls = "user" if role == "user" else "assistant"
-        text = html.escape(str(message))
-        lines.append(
-            f'<div class="chatline {role_cls}">'
-            f'<div class="bubble">{text}</div>'
-            f"</div>"
-        )
-    return "\n".join(lines)
+        text = str(message)
+
+        if role == "user":
+            # If there was a previous user without a reply yet, flush it.
+            if pending_user is not None:
+                pairs.append([pending_user, ""])
+            pending_user = text
+        else:  # assistant
+            if pending_user is None:
+                # Assistant with no explicit user just before
+                pairs.append(["", text])
+            else:
+                pairs.append([pending_user, text])
+                pending_user = None
+
+    # Trailing user with no assistant reply yet
+    if pending_user is not None:
+        pairs.append([pending_user, ""])
+
+    return pairs
 
 def get_save_confirmation():
     profile = get_user_profile()
