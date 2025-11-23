@@ -1,6 +1,7 @@
 # ui/actions.py
 from __future__ import annotations
 from typing import Tuple, List, Dict
+import html
 
 from memory.conversation import (
     # Profile + history (scoped to ACTIVE conversation)
@@ -50,13 +51,34 @@ def clear_conversation_history():
     return get_conversation_history()
 
 def update_history_display(history):
+    """
+    Render the active conversation as a ChatGPT-style log:
+
+      - user messages right-aligned
+      - assistant messages left-aligned
+
+    Uses .chatline.user / .chatline.assistant + .bubble classes
+    styled in ui/styles.py.
+    """
     if not history:
-        return "No conversation history yet."
-    out = []
-    for i, (role, message) in enumerate(history, 1):
-        speaker = "You" if role == "user" else "Jarvin"
-        out.append(f"{i}. {speaker}: {message}\n")
-    return "\n".join(out)
+        return (
+            "<div class='chatline assistant'>"
+            "<div class='bubble'>No conversation history yet.</div>"
+            "</div>"
+        )
+
+    lines = []
+    for role, message in history:
+        if not message:
+            continue
+        role_cls = "user" if role == "user" else "assistant"
+        text = html.escape(str(message))
+        lines.append(
+            f'<div class="chatline {role_cls}">'
+            f'<div class="bubble">{text}</div>'
+            f"</div>"
+        )
+    return "\n".join(lines)
 
 def get_save_confirmation():
     profile = get_user_profile()

@@ -8,6 +8,7 @@ from ui.components import build_header, build_profile_tab, build_live_tab, init_
 from ui.handlers import bind_profile_actions, bind_live_actions
 from ui.actions import update_history_display, load_user_profile_fields, get_conversation_menu
 from ui.poller import Poller
+from memory.conversation import get_conversation_history
 
 
 def create_app():
@@ -24,20 +25,29 @@ def create_app():
         bind_profile_actions(components)
         bind_live_actions(components)
 
-        # --- Single page-load initializer (devices + saved profile + conversations) ---
+        # --- Single page-load initializer (devices + saved profile + conversations + chat log) ---
         def _init_page():
             # 1) Device UI (choices + selected + label)
             choices_update, label = components["_init_devices_fn"]()  # returns (Dropdown.update, label)
+
             # 2) Saved profile prefill
             name, goal, mood, style, length, status = load_user_profile_fields()
+
             # 3) Conversations dropdown
             conv_choices, conv_selected, conv_subtitle = get_conversation_menu()
+
+            # 4) Active conversation history -> state + rendered chat log
+            history = get_conversation_history()
+            chat_html = update_history_display(history)
+
             return (
                 choices_update,   # device dropdown update (choices + selected)
                 label,            # device_current Markdown
                 name, goal, mood, style, length, status,  # profile fields + status text
                 gr.update(choices=conv_choices, value=conv_selected),  # conversations dropdown
                 conv_subtitle,
+                history,          # conversation_memory state
+                chat_html,        # chat_history markdown
             )
 
         demo.load(
@@ -53,35 +63,35 @@ def create_app():
                 components["status"],
                 components["conversation_dropdown"],
                 components["conv_subtitle"],
+                components["conversation_memory"],
+                components["chat_history"],
             ],
             show_progress=False,
         )
 
-        # ✅ Single polling loop drives EVERYTHING (banner, textboxes, metrics, history).
+        # ✅ Single polling loop drives status, metrics, TTS + appends to conversation_memory.
         poller = Poller()
         timer = gr.Timer(value=0.75, active=True)  # 750ms feels snappy without spamming
         tick_evt = timer.tick(
             fn=poller.tick,
             inputs=[components["conversation_memory"]],
             outputs=[
-                components["status_banner"],
-                components["transcription"],
-                components["ai_reply"],
-                components["metrics"],
-                components["conversation_memory"],
-                components["start_btn"],
-                components["stop_btn"],
-                components["tts_audio"],
+                components["status_banner"],   # status
+                components["metrics"],         # metrics
+                components["conversation_memory"],  # updated history (list[(role, msg)])
+                components["start_btn"],       # start button state
+                components["stop_btn"],        # stop button state
+                components["tts_audio"],       # TTS audio URL
             ],
             show_progress=False,
             concurrency_limit=1,
         )
 
-        # 🔁 Render the history panel **every** tick using the updated memory
+        # 🔁 Render the unified chat log from conversation_memory every tick
         tick_evt.then(
             fn=update_history_display,
             inputs=[components["conversation_memory"]],
-            outputs=[components["history_display"]],
+            outputs=[components["chat_history"]],
             show_progress=False,
         )
 

@@ -2,18 +2,19 @@
 from __future__ import annotations
 import gradio as gr
 
+
 def init_state(components: dict) -> None:
     """Create global Gradio States used across tabs."""
     components["user_context"] = gr.State({})
     components["conversation_memory"] = gr.State([])  # active conversation history
-    components["current_transcription"] = gr.State("")
-    components["current_reply"] = gr.State("")
-    # Hold the conversation dropdown value to prevent flicker on refresh
+    # Hold the conversation dropdown value to prevent flicker on refresh (currently unused but harmless)
     components["conversation_dropdown_value"] = gr.State(None)
+
 
 def build_header() -> None:
     with gr.Row():
         gr.Markdown("<h1 style='margin:0'>Jarvin - Your AI Assistant</h1>")
+
 
 def build_profile_tab(components: dict) -> None:
     with gr.Tab("👤 User Profile"):
@@ -41,6 +42,7 @@ def build_profile_tab(components: dict) -> None:
         components["save_btn"] = gr.Button("💾 Save Profile Settings")
         components["status"] = gr.Markdown("", elem_classes="status-text")
 
+
 def build_live_tab(components: dict) -> None:
     with gr.Tab("🤖 Jarvin Live"):
         gr.Markdown("### 🎙️ Live listening (noise gate + VAD)")
@@ -54,6 +56,7 @@ def build_live_tab(components: dict) -> None:
                     components["stop_btn"] = gr.Button("⏸ Pause Listener")
                 with gr.Row(elem_classes="button_row"):
                     components["shutdown_btn"] = gr.Button("🛑 Shutdown Jarvin")
+
                 # ---- Conversations panel ----
                 with gr.Accordion("🗂️ Conversations", open=True):
                     components["conv_subtitle"] = gr.Markdown("", elem_classes="status-text")
@@ -65,32 +68,35 @@ def build_live_tab(components: dict) -> None:
                             interactive=True,
                         )
                     with gr.Row():
-                        components["new_conv_title"] = gr.Textbox(label="New conversation title", placeholder="e.g., Trip planning")
+                        components["new_conv_title"] = gr.Textbox(
+                            label="New conversation title",
+                            placeholder="e.g., Trip planning",
+                        )
                         components["new_conv_btn"] = gr.Button("➕ New")
                     with gr.Row():
-                        components["rename_conv_title"] = gr.Textbox(label="Rename to…", placeholder="e.g., Weekend tasks")
+                        components["rename_conv_title"] = gr.Textbox(
+                            label="Rename to…",
+                            placeholder="e.g., Weekend tasks",
+                        )
                         components["rename_conv_btn"] = gr.Button("✏️ Rename")
-                        components["delete_conv_btn"] = gr.Button("🗑️ Delete", elem_classes="clear-btn")
-                components["clear_btn"] = gr.Button("🧹 Clear This Conversation", elem_classes="clear-btn")
+                        components["delete_conv_btn"] = gr.Button(
+                            "🗑️ Delete",
+                            elem_classes="clear-btn",
+                        )
 
-            # Live column
-            with gr.Column(scale=2, elem_id="live_col"):
-                components["transcription"] = gr.Textbox(
-                    label="📝 Last Heard",
-                    placeholder="—",
-                    lines=2,
-                    elem_id="transcription_box",
-                    interactive=False,
-                    show_copy_button=True,
+                components["clear_btn"] = gr.Button(
+                    "🧹 Clear This Conversation",
+                    elem_classes="clear-btn",
                 )
-                components["ai_reply"] = gr.Textbox(
-                    label="🤖 Last Reply",
-                    placeholder="—",
-                    lines=6,
-                    max_lines=8,
-                    elem_id="ai_reply_box",
-                    interactive=False,
-                    show_copy_button=True,
+
+            # Live / conversation column
+            with gr.Column(scale=2, elem_id="live_col"):
+                gr.Markdown("#### 💬 Conversation")
+                # Single unified conversation log (ChatGPT-style bubbles)
+                components["chat_history"] = gr.Markdown(
+                    value="No conversation history yet.",
+                    elem_id="history_box",
+                    elem_classes=["conversation-history"],
                 )
                 components["tts_audio"] = gr.Audio(
                     label="🔊 Spoken Reply",
@@ -110,14 +116,3 @@ def build_live_tab(components: dict) -> None:
                     interactive=True,
                 )
                 components["device_refresh_btn"] = gr.Button("🔄 Refresh", scale=0)
-
-        with gr.Accordion("💬 Conversation History", open=False):
-            components["history_display"] = gr.Textbox(
-                label="",
-                lines=10,
-                max_lines=10,
-                interactive=False,
-                show_copy_button=True,
-                elem_id="history_box",
-                elem_classes=["conversation-history"],
-            )

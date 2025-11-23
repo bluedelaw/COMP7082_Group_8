@@ -1,7 +1,7 @@
 # ui/poller.py
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any
 import gradio as gr
 
 from ui.api import (
@@ -20,17 +20,18 @@ class Poller:
         # status/banner
         self._last_banner: str | None = None
 
-        # transcript/reply
-        self._last_transcript: str | None = None
-        self._last_reply: str | None = None
-        self._last_tts_url: str | None = None
-
         # metrics edge detection (processing True -> False)
         self._last_processing: bool | None = None
         self._last_metrics_key: tuple[int | None, int | None] | None = None
 
+        # audio
+        self._last_tts_url: str | None = None
+
         # button state
-        self._btn_state: dict[str, tuple[Any, Any, Any] | None] = {"start": None, "pause": None}
+        self._btn_state: dict[str, tuple[Any, Any, Any] | None] = {
+            "start": None,
+            "pause": None,
+        }
 
     @staticmethod
     def _norm_btn_state(u: dict) -> tuple[Any, Any, Any]:
@@ -77,22 +78,17 @@ class Poller:
     def tick(self, conversation_memory: list[tuple[str, str]] | None):
         """
         Gradio Timer callback.
-        Returns tuple matching outputs in app.py.
+        Returns tuple matching outputs in app.py:
+          (status_banner, metrics, conversation_memory, start_btn, stop_btn, tts_audio)
         """
         try:
             banner_out, start_u, pause_u, s, l = self._status_updates()
 
-            # Current values
+            # Current values from /live
             t_now = (l.get("transcript") or "").strip()
             r_now = (l.get("reply") or "").strip()
             tts_rel = (l.get("tts_url") or "").strip()
             tts_abs = (server_url() + tts_rel) if tts_rel else ""
-
-            # Determine if either changed BEFORE mutating caches
-            transcript_changed = t_now != self._last_transcript
-            reply_changed = r_now != self._last_reply
-            pair_changed = transcript_changed or reply_changed
-            tts_changed = bool(tts_abs) and (tts_abs != self._last_tts_url)
 
             # Metrics: edge detect processing True -> False
             utt_ms = l.get("utter_ms")
@@ -115,46 +111,50 @@ class Poller:
                     self._last_metrics_key = key
             self._last_processing = processing_now
 
-            # Conversation history append-on-change (uses old caches intentionally)
-            if t_now and pair_changed:
-                hist = (conversation_memory or []).copy()
-                hist.append(("user", t_now))
-                if r_now:
-                    hist.append(("assistant", r_now))
-                hist_out = hist
-            else:
-                hist_out = gr.update()
+            # Conversation history append-on-change:
+            #   - Use current transcript/reply
+            #   - Avoid duplicating the last user/assistant pair.
+            hist_out = gr.update()
+            if t_now:
+                hist = list(conversation_memory or [])
+                tail = hist[-2:]
+                duplicate = False
+                if len(tail) == 2:
+                    last_user_role, last_user_msg = tail[0]
+                    last_ass_role, last_ass_msg = tail[1]
+                    if (
+                        last_user_role == "user"
+                        and last_user_msg == t_now
+                        and last_ass_role == "assistant"
+                        and (not r_now or last_ass_msg == r_now)
+                    ):
+                        duplicate = True
 
-            # Now update caches and textbox/audio outputs
-            t_out = t_now if transcript_changed else gr.update()
-            if transcript_changed:
-                self._last_transcript = t_now
+                if not duplicate:
+                    hist.append(("user", t_now))
+                    if r_now:
+                        hist.append(("assistant", r_now))
+                    hist_out = hist
 
-            r_out = r_now if reply_changed else gr.update()
-            if reply_changed:
-                self._last_reply = r_now
-
-            audio_out = tts_abs if tts_changed else gr.update()
-            if tts_changed:
+            # TTS audio update: only when URL changes
+            audio_out = gr.update()
+            if tts_abs and tts_abs != self._last_tts_url:
+                audio_out = tts_abs
                 self._last_tts_url = tts_abs
 
             return (
-                banner_out,  # status_banner
-                t_out,       # transcription
-                r_out,       # ai_reply
-                metrics_out, # metrics
-                hist_out,    # conversation_memory
-                start_u,     # start button
-                pause_u,     # stop button
-                audio_out,   # tts audio
+                banner_out,   # status_banner
+                metrics_out,  # metrics
+                hist_out,     # conversation_memory
+                start_u,      # start button
+                pause_u,      # stop button
+                audio_out,    # tts audio
             )
 
         except Exception:
             # Never let the timer die — return "no changes" for all outputs.
             return (
                 gr.update(),  # status_banner
-                gr.update(),  # transcription
-                gr.update(),  # ai_reply
                 gr.update(),  # metrics
                 gr.update(),  # conversation_memory
                 gr.update(),  # start button

@@ -55,13 +55,6 @@ def bind_profile_actions(components: dict) -> None:
         outputs=[components["user_context"]],
     ).then(fn=get_save_confirmation, outputs=[components["status"]])
 
-    # Keep history display in sync if conversation_memory changes outside the poller (e.g., Clear)
-    components["conversation_memory"].change(
-        fn=update_history_display,
-        inputs=[components["conversation_memory"]],  # type: ignore[arg-type]
-        outputs=[components["history_display"]],
-    )
-
     # ---- Mic device UI helpers ----
     def _present_from_data(data: dict):
         devices = data.get("devices", [])
@@ -69,8 +62,11 @@ def bind_profile_actions(components: dict) -> None:
         sel_name = data.get("selected_name")
         choices = [f"[{d['index']}] {d['name']}" for d in devices]
         selected = f"[{sel_idx}] {sel_name}" if sel_idx is not None and sel_name else None
-        label = (f"**Current input device:** `{sel_idx}` — **{sel_name}**"
-                 if sel_idx is not None and sel_name else "_No input device available_")
+        label = (
+            f"**Current input device:** `{sel_idx}` — **{sel_name}**"
+            if sel_idx is not None and sel_name
+            else "_No input device available_"
+        )
         return choices, selected, label
 
     def _value_to_index(value: str | None) -> int | None:
@@ -146,8 +142,7 @@ def bind_live_actions(components: dict) -> None:
         return (
             gr.update(choices=choices, value=selected),  # dropdown
             subtitle,                                    # subtitle
-            history,                                     # state: conversation_memory
-            "", "",                                      # reset "Last Heard" + "Last Reply" boxes
+            history,                                     # conversation_memory
         )
 
     def _on_new_conversation(title):
@@ -156,7 +151,6 @@ def bind_live_actions(components: dict) -> None:
             gr.update(choices=choices, value=selected),
             subtitle,
             history,
-            "", "",
         )
 
     def _on_rename_conversation(title):
@@ -172,13 +166,12 @@ def bind_live_actions(components: dict) -> None:
             gr.update(choices=choices, value=selected),
             subtitle,
             history,
-            "", "",
         )
 
     # Clear conversation -> wipe active convo only
     def _clear_all_conversation():
         history = clear_conversation_history()
-        return "", "", history
+        return history
 
     # Buttons (listener)
     def _start_listener():
@@ -207,11 +200,15 @@ def bind_live_actions(components: dict) -> None:
             components["conversation_dropdown"],
             components["conv_subtitle"],
             components["conversation_memory"],
-            components["transcription"],
-            components["ai_reply"],
         ],
         show_progress=False,
+    ).then(
+        fn=update_history_display,
+        inputs=[components["conversation_memory"]],
+        outputs=[components["chat_history"]],
+        show_progress=False,
     )
+
     components["new_conv_btn"].click(
         fn=_on_new_conversation,
         inputs=[components["new_conv_title"]],
@@ -219,10 +216,13 @@ def bind_live_actions(components: dict) -> None:
             components["conversation_dropdown"],
             components["conv_subtitle"],
             components["conversation_memory"],
-            components["transcription"],
-            components["ai_reply"],
         ],
+    ).then(
+        fn=update_history_display,
+        inputs=[components["conversation_memory"]],
+        outputs=[components["chat_history"]],
     )
+
     components["rename_conv_btn"].click(
         fn=_on_rename_conversation,
         inputs=[components["rename_conv_title"]],
@@ -231,33 +231,28 @@ def bind_live_actions(components: dict) -> None:
             components["conv_subtitle"],
         ],
     )
+
     components["delete_conv_btn"].click(
         fn=_on_delete_conversation,
         outputs=[
             components["conversation_dropdown"],
             components["conv_subtitle"],
             components["conversation_memory"],
-            components["transcription"],
-            components["ai_reply"],
         ],
+    ).then(
+        fn=update_history_display,
+        inputs=[components["conversation_memory"]],
+        outputs=[components["chat_history"]],
     )
 
     # Clear current active conversation
     components["clear_btn"].click(
         fn=_clear_all_conversation,
-        outputs=[
-            components["current_transcription"],
-            components["current_reply"],
-            components["conversation_memory"],
-        ],
-    ).then(
-        fn=lambda ct, cr: (ct, cr),
-        inputs=[components["current_transcription"], components["current_reply"]],
-        outputs=[components["transcription"], components["ai_reply"]],
+        outputs=[components["conversation_memory"]],
     ).then(
         fn=update_history_display,
         inputs=[components["conversation_memory"]],
-        outputs=[components["history_display"]],
+        outputs=[components["chat_history"]],
     )
 
     # Start / Stop / Shutdown
