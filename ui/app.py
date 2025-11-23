@@ -33,7 +33,7 @@ def create_app():
             # 2) Saved profile prefill
             name, goal, mood, style, length, status = load_user_profile_fields()
 
-            # 3) Conversations dropdown
+            # 3) Conversations list (radio) with active on top
             conv_choices, conv_selected, conv_subtitle = get_conversation_menu()
 
             # 4) Active conversation history -> state + rendered chat log
@@ -44,10 +44,10 @@ def create_app():
                 choices_update,   # device dropdown update (choices + selected)
                 label,            # device_current Markdown
                 name, goal, mood, style, length, status,  # profile fields + status text
-                gr.update(choices=conv_choices, value=conv_selected),  # conversations dropdown
-                conv_subtitle,
+                gr.update(choices=conv_choices, value=conv_selected),  # conversations radio
+                conv_subtitle,    # conv_status
                 history,          # conversation_memory state
-                chat_html,        # chat_history markdown
+                chat_html,        # chat_history Chatbot
             )
 
         demo.load(
@@ -61,8 +61,8 @@ def create_app():
                 components["communication_style"],
                 components["response_length"],
                 components["status"],
-                components["conversation_dropdown"],
-                components["conv_subtitle"],
+                components["conv_list"],
+                components["conv_status"],
                 components["conversation_memory"],
                 components["chat_history"],
             ],

@@ -8,7 +8,7 @@ def init_state(components: dict) -> None:
     components["user_context"] = gr.State({})
     components["conversation_memory"] = gr.State([])  # active conversation history
 
-    # Hold the conversation dropdown value to prevent flicker on refresh (currently unused but harmless)
+    # (Legacy) Held the conversation dropdown value; kept for compatibility if needed
     components["conversation_dropdown_value"] = gr.State(None)
 
     # Hidden state that changes only when a NEW utterance is appended
@@ -21,6 +21,9 @@ def init_state(components: dict) -> None:
     # Hidden state for metrics text + its own sequence id
     components["metrics_state"] = gr.State(None)
     components["metrics_seq"] = gr.State(None)
+
+    # State to control visibility of the per-conversation options menu (⋯)
+    components["conv_menu_open_state"] = gr.State(False)
 
 
 def build_header() -> None:
@@ -71,35 +74,46 @@ def build_live_tab(components: dict) -> None:
 
                 # ---- Conversations panel ----
                 with gr.Accordion("🗂️ Conversations", open=True):
-                    components["conv_subtitle"] = gr.Markdown("", elem_classes="status-text")
+                    # New chat on top
+                    components["new_conv_btn"] = gr.Button("➕ New chat")
+
+                    # List all conversations (radio), with active one on top
+                    components["conv_list"] = gr.Radio(
+                        label="Conversations",
+                        choices=[],
+                        value=None,
+                        interactive=True,
+                        show_label=False,
+                        elem_classes=["conversation-list"],
+                    )
+                    components["conv_status"] = gr.Markdown("", elem_classes="status-text")
+
+                    # 3-dots menu trigger (applies to the currently selected conversation)
                     with gr.Row():
-                        components["conversation_dropdown"] = gr.Dropdown(
-                            label="Select",
-                            choices=[],
-                            value=None,
-                            interactive=True,
-                        )
-                    with gr.Row():
-                        components["new_conv_title"] = gr.Textbox(
-                            label="New conversation title",
-                            placeholder="e.g., Trip planning",
-                        )
-                        components["new_conv_btn"] = gr.Button("➕ New")
-                    with gr.Row():
-                        components["rename_conv_title"] = gr.Textbox(
-                            label="Rename to…",
-                            placeholder="e.g., Weekend tasks",
-                        )
-                        components["rename_conv_btn"] = gr.Button("✏️ Rename")
-                        components["delete_conv_btn"] = gr.Button(
-                            "🗑️ Delete",
-                            elem_classes="clear-btn",
+                        components["conv_menu_btn"] = gr.Button("⋯", scale=0)
+                        gr.Markdown(
+                            "_Conversation options for the selected chat_",
+                            elem_classes="status-text",
                         )
 
-                components["clear_btn"] = gr.Button(
-                    "🧹 Clear This Conversation",
-                    elem_classes="clear-btn",
-                )
+                    # Menu content (rename / clear / delete) is shown/hidden via conv_menu_open_state
+                    with gr.Group(visible=False) as conv_menu_group:
+                        components["rename_conv_title"] = gr.Textbox(
+                            label="Rename conversation",
+                            placeholder="New title",
+                        )
+                        with gr.Row():
+                            components["rename_conv_btn"] = gr.Button("Rename")
+                            components["clear_conv_btn"] = gr.Button("Clear history")
+                            components["delete_conv_btn"] = gr.Button(
+                                "Delete",
+                                elem_classes="clear-btn",
+                            )
+                        components["conv_error"] = gr.Markdown("", elem_classes="status-text")
+
+                    components["conv_menu_group"] = conv_menu_group
+
+                # (Conversation-level clear button is now inside the menu; no separate big clear button.)
 
             # Live / conversation column
             with gr.Column(scale=2, elem_id="live_col"):
@@ -108,8 +122,8 @@ def build_live_tab(components: dict) -> None:
                 # Single unified conversation log as a Chatbot (one scrollable UI element)
                 components["chat_history"] = gr.Chatbot(
                     value=[],
-                    label="",           # no title text
-                    show_label=False,   # hide the "Chatbot" label
+                    label="",
+                    show_label=False,
                     elem_id="history_box",
                     elem_classes=["conversation-history"],
                 )

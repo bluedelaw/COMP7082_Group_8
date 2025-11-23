@@ -120,6 +120,12 @@ body {
 .conversation-history::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 4px; }
 .conversation-history::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
+/* Conversation list (radio) */
+.conversation-list {
+    max-height: 260px;
+    overflow-y: auto;
+}
+
 /* (Legacy bubble styles kept; no longer used now that Chatbot handles layout)
 .chatline {
     display: flex;
