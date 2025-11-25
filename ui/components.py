@@ -151,8 +151,16 @@ def build_live_tab(components: dict) -> None:
                 )
 
                 # Rendered timestamps for utterance and response
-                components["utter_ts_md"] = gr.Markdown("&nbsp;", elem_classes="status-text")
-                components["reply_ts_md"] = gr.Markdown("&nbsp;", elem_classes="status-text")
+                components["utter_ts_md"] = gr.Markdown(
+                    "&nbsp;",
+                    elem_classes="status-text",
+                    visible=False,
+                )
+                components["reply_ts_md"] = gr.Markdown(
+                    "&nbsp;",
+                    elem_classes="status-text",
+                    visible=False,
+                )
 
                 # Metrics bar (decoupled from polling via metrics_state/metrics_seq)
                 components["metrics"] = gr.HTML("&nbsp;", elem_id="metrics_bar")
