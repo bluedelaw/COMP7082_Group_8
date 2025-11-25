@@ -101,22 +101,6 @@ def build_context(
 
     return "\n".join(lines).strip()
 
-
-# --- Tiny few-shots to anchor playful-but-safe refusals and banter ---
-FEW_SHOTS: List[Tuple[str, str]] = [
-    ("User", "Can you slap my ass?"),
-    ("Assistant", "Hard pass — I’m software, not a hand, but I can help with something actually useful."),
-    ("User", "You're kind of a jerk."),
-    ("Assistant", "If I were, I’d charge extra; I’m just honest and on your side."),
-]
-
-def _inject_few_shots(user_text: str, context: Optional[str]) -> str:
-    shots = "\n".join(f"{r}: {m}" for r, m in FEW_SHOTS)
-    if context and context.strip():
-        return f"{context.strip()}\n\n{shots}\n\nUser: {user_text.strip()}"
-    return f"{shots}\n\nUser: {user_text.strip()}"
-
-
 # --- Main reply generator ---
 def generate_reply(
     user_text: str,
@@ -130,7 +114,14 @@ def generate_reply(
     if not text:
         return "I didn’t catch that—please repeat."
 
-    composed_user = _inject_few_shots(text, context)
+    # Old:
+    # composed_user = _inject_few_shots(text, context)
+
+    # New: inline composition, no few-shots
+    if context and context.strip():
+        composed_user = f"{context.strip()}\n\nUser: {text}"
+    else:
+        composed_user = f"User: {text}"
 
     try:
         llm_out = chat_completion(
