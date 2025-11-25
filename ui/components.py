@@ -77,39 +77,55 @@ def build_live_tab(components: dict) -> None:
                     # New chat on top
                     components["new_conv_btn"] = gr.Button("➕ New chat")
 
-                    # List all conversations (radio), with active one on top
-                    components["conv_list"] = gr.Radio(
-                        label="Conversations",
-                        choices=[],
-                        value=None,
-                        interactive=True,
-                        show_label=False,
-                        elem_classes=["conversation-list"],
-                    )
-                    components["conv_status"] = gr.Markdown("", elem_classes="status-text")
-
-                    # 3-dots menu trigger (applies to the currently selected conversation)
-                    with gr.Row():
-                        components["conv_menu_btn"] = gr.Button("⋯", scale=0)
-                        gr.Markdown(
-                            "_Conversation options for the selected chat_",
-                            elem_classes="status-text",
+                    # List + subtitle + inline ⋯ button in one wrapper
+                    with gr.Group(elem_id="conv_list_wrapper"):
+                        # List all conversations (radio), with active one styled via CSS
+                        components["conv_list"] = gr.Radio(
+                            label="Conversations",
+                            choices=[],
+                            value=None,
+                            interactive=True,
+                            show_label=False,
+                            elem_classes=["conversation-list"],
                         )
 
-                    # Menu content (rename / clear / delete) is shown/hidden via conv_menu_open_state
-                    with gr.Group(visible=False) as conv_menu_group:
-                        components["rename_conv_title"] = gr.Textbox(
-                            label="Rename conversation",
-                            placeholder="New title",
+                        # Subtitle is now hidden via CSS (kept for wiring)
+                        components["conv_status"] = gr.Markdown(
+                            "",
+                            elem_classes=["status-text", "conv-status-hidden"],
                         )
-                        with gr.Row():
-                            components["rename_conv_btn"] = gr.Button("Rename")
-                            components["clear_conv_btn"] = gr.Button("Clear history")
-                            components["delete_conv_btn"] = gr.Button(
-                                "Delete",
-                                elem_classes="clear-btn",
+
+                        # Single ⋯ button that always operates on the currently active chat
+                        components["conv_menu_btn"] = gr.Button(
+                            "⋯",
+                            scale=0,
+                            elem_id="conv_menu_button",
+                        )
+
+
+                    # Overlay menu for per-conversation actions
+                    with gr.Group(visible=False, elem_id="conv_menu_overlay") as conv_menu_group:
+                        with gr.Column(elem_classes="conv-menu-card"):
+                            gr.Markdown(
+                                "### Conversation settings",
+                                elem_classes="conv-menu-title",
                             )
-                        components["conv_error"] = gr.Markdown("", elem_classes="status-text")
+                            components["rename_conv_title"] = gr.Textbox(
+                                label="Rename conversation",
+                                placeholder="New title",
+                            )
+                            with gr.Row():
+                                components["rename_conv_btn"] = gr.Button("Rename")
+                                components["clear_conv_btn"] = gr.Button("Clear history")
+                                components["delete_conv_btn"] = gr.Button(
+                                    "Delete",
+                                    elem_classes="clear-btn",
+                                )
+                            components["conv_error"] = gr.Markdown(
+                                "",
+                                elem_classes="status-text",
+                            )
+                            components["conv_menu_close_btn"] = gr.Button("Close")
 
                     components["conv_menu_group"] = conv_menu_group
 

@@ -126,6 +126,32 @@ def _migrate(conn: sqlite3.Connection) -> None:
             )
 
 
+def _generate_default_title(conn: sqlite3.Connection) -> str:
+    """
+    Generate a unique default title:
+
+      New conversation
+      New conversation (1)
+      New conversation (2)
+      ...
+
+    Only used when no explicit title is provided.
+    """
+    base = "New conversation"
+    rows = conn.execute("SELECT title FROM conversations;").fetchall()
+    existing = {(r["title"] or "").strip() for r in rows}
+
+    if base not in existing:
+        return base
+
+    i = 1
+    while True:
+        candidate = f"{base} ({i})"
+        if candidate not in existing:
+            return candidate
+        i += 1
+
+
 # ---------- Active conversation helpers ----------
 
 def _get_active_conversation_id(conn: sqlite3.Connection) -> int:
@@ -172,11 +198,22 @@ def new_conversation(title: str | None = None, *, activate: bool = True) -> int:
     """
     Create a new conversation. If activate=True, makes it the active one.
     Returns the new conversation id.
+
+    If `title` is empty/None, a unique default is generated:
+      New conversation
+      New conversation (1)
+      New conversation (2)
+      ...
     """
     conn = _connect()
-    title = (title or "").strip() or "New conversation"
+    raw_title = (title or "").strip()
     with _lock, conn:
-        cur = conn.execute("INSERT INTO conversations (title) VALUES (?);", (title,))
+        if raw_title:
+            final_title = raw_title
+        else:
+            final_title = _generate_default_title(conn)
+
+        cur = conn.execute("INSERT INTO conversations (title) VALUES (?);", (final_title,))
         cid = int(cur.lastrowid)
         if activate:
             _set_active_conversation_id(conn, cid)

@@ -98,45 +98,64 @@ def get_save_confirmation():
 # -------- Multi-conversation helpers for UI --------
 
 def _fmt_choice(item: Dict) -> str:
-    # Render as "[id] title (N)"
-    return f"[{item['id']}] {item['title']} ({item['messages']})"
-
-
-def _parse_choice(val: str | None) -> int | None:
-    if not val:
-        return None
-    try:
-        return int(val.split("]", 1)[0].strip("[ "))
-    except Exception:
-        return None
+    """
+    Render as just the title, no IDs or message counts.
+    Fallback to a generic name if title is empty.
+    """
+    title = (item.get("title") or "").strip()
+    if not title:
+        # Backend always sets a title, but keep a safe fallback.
+        return "Conversation"
+    return title
 
 
 def get_conversation_menu():
     """
     Returns (choices, selected_value, subtitle_markdown) for the Conversations UI.
-    choices are strings like "[id] title (N)".
+    - choices: plain conversation titles (strings)
+    - selected_value: the active conversation's title
+    - subtitle_markdown: kept for wiring compatibility; currently always "".
     """
     items = list_conversations()
     active = get_active_conversation_id()
     choices = [_fmt_choice(it) for it in items]
     selected = None
-    subtitle = ""
+
     for it in items:
         if it["id"] == active:
             selected = _fmt_choice(it)
-            subtitle = f"**Active:** `{it['id']}` — **{it['title']}**"
             break
+
     if selected is None and choices:
         selected = choices[0]
-        subtitle = "Select a conversation…"
+
+    # No “Active: …” text anymore
+    subtitle = ""
     return choices, selected, subtitle
 
-
 def activate_conversation(value: str | None):
-    cid = _parse_choice(value)
-    if cid is None:
+    """
+    Activate a conversation based on its title (the Radio's value).
+
+    If multiple conversations share the same title, this selects the first
+    one returned by list_conversations() (newest first).
+    """
+    title = (value or "").strip()
+    if not title:
         return get_conversation_menu(), get_conversation_history()
-    set_active_conversation(cid)
+
+    items = list_conversations()
+    cid = None
+    for it in items:
+        if (it.get("title") or "").strip() == title:
+            cid = it["id"]
+            break
+
+    if cid is None:
+        # Fallback: if something went wrong, leave active as-is but refresh menu/history.
+        return get_conversation_menu(), get_conversation_history()
+
+    set_active_conversation(int(cid))
     return get_conversation_menu(), get_conversation_history()
 
 

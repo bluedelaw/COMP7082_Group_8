@@ -180,6 +180,10 @@ def bind_live_actions(components: dict) -> None:
         new_open = not is_open
         return new_open, gr.update(visible=new_open)
 
+    def _close_conv_menu():
+        # Force menu closed, used by the "Close" button on the overlay
+        return False, gr.update(visible=False)
+
     # Buttons (listener)
     def _start_listener():
         api_post_start()
@@ -242,7 +246,14 @@ def bind_live_actions(components: dict) -> None:
         show_progress=False,
     )
 
-    # Rename current conversation
+    # Explicit close button inside the overlay
+    components["conv_menu_close_btn"].click(
+        fn=_close_conv_menu,
+        outputs=[components["conv_menu_open_state"], components["conv_menu_group"]],
+        show_progress=False,
+    )
+
+        # Rename current conversation, then close the menu
     components["rename_conv_btn"].click(
         fn=_on_rename_conversation,
         inputs=[components["rename_conv_title"]],
@@ -251,9 +262,13 @@ def bind_live_actions(components: dict) -> None:
             components["conv_status"],
             components["conv_error"],
         ],
+    ).then(
+        fn=_close_conv_menu,
+        outputs=[components["conv_menu_open_state"], components["conv_menu_group"]],
+        show_progress=False,
     )
 
-    # Delete current conversation (blocked if it's the only one)
+        # Delete current conversation (blocked if it's the only one), then close the menu
     components["delete_conv_btn"].click(
         fn=_on_delete_conversation,
         outputs=[
@@ -266,9 +281,14 @@ def bind_live_actions(components: dict) -> None:
         fn=update_history_display,
         inputs=[components["conversation_memory"]],
         outputs=[components["chat_history"]],
+        show_progress=False,
+    ).then(
+        fn=_close_conv_menu,
+        outputs=[components["conv_menu_open_state"], components["conv_menu_group"]],
+        show_progress=False,
     )
 
-    # Clear current active conversation history
+    # Clear current active conversation history, then close the menu
     components["clear_conv_btn"].click(
         fn=_clear_all_conversation,
         outputs=[components["conversation_memory"], components["conv_error"]],
@@ -276,6 +296,11 @@ def bind_live_actions(components: dict) -> None:
         fn=update_history_display,
         inputs=[components["conversation_memory"]],
         outputs=[components["chat_history"]],
+        show_progress=False,
+    ).then(
+        fn=_close_conv_menu,
+        outputs=[components["conv_menu_open_state"], components["conv_menu_group"]],
+        show_progress=False,
     )
 
     # --- Start / Stop / Shutdown controls ---

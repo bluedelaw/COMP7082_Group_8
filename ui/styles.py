@@ -153,4 +153,116 @@ body {
 
 /* Minor: trim default markdown margins globally to avoid bumps */
 .gr-markdown, .gr-prose, .prose { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+
+/* Conversation list: active row background color + hover ⋯ indicator */
+.conversation-list .gr-radio {
+    padding: 0;
+    background: transparent;
+}
+
+.conversation-list .gr-radio label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    background: #111827;          /* default background for all rows */
+    color: #e5e7eb;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+/* Hover state for any conversation row */
+.conversation-list .gr-radio label:hover {
+    background: #1f2937;
+}
+
+/* Ellipsis on hover, aligned to the right */
+.conversation-list .gr-radio label::after {
+    content: "⋯";
+    opacity: 0;
+    font-weight: 700;
+    margin-left: 8px;
+    transition: opacity 0.15s ease;
+}
+
+.conversation-list .gr-radio label:hover::after {
+    opacity: 1;
+}
+
+/* Active conversation row (different background color) */
+.conversation-list .gr-radio label:has(input[type="radio"]:checked) {
+    background: #4f46e5;          /* active background */
+    color: #f9fafb;
+}
+
+/* Hide the old "active conversation" subtitle completely */
+.conv-status-hidden {
+    display: none !important;
+}
+
+/* Conversation settings overlay */
+#conv_menu_overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1000;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+
+/* Gradio's wrapper around the card (the .styler div) – kill its background */
+#conv_menu_overlay > .styler {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+/* The actual card: only this should have a background */
+#conv_menu_overlay .conv-menu-card {
+    background-color: #111827 !important;  /* card background ONLY */
+    border-radius: 12px;
+    padding: 16px 20px;
+
+    flex-grow: 0 !important;               /* don't stretch full width */
+    width: 100%;
+    max-width: 420px;
+    margin: 10vh auto 0 auto;
+}
+
+/* Optional: inner blocks inside the card inherit the card bg, not their own */
+#conv_menu_overlay .conv-menu-card .block {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Minor spacing for overlay title */
+#conv_menu_overlay .conv-menu-title .prose {
+    margin-bottom: 0.5rem;
+}
+
+/* Ellipsis button that triggers the overlay (acts on active chat) */
+/* Wrapper around conversation list + status + ⋯ button */
+#conv_list_wrapper {
+    position: relative;
+}
+
+/* Ellipsis button visually inline with the conversations list */
+#conv_menu_button {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 28px;
+    min-width: 28px;
+    padding: 0;
+    line-height: 1;
+    z-index: 5;
+}
 """
