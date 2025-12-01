@@ -83,17 +83,44 @@ sys.modules["pyaudio"] = fake_mod
 
 # Mock config.settings if it doesn't exist
 # First create a mock config module
+# Mock config.settings if it doesn't exist
+# First create a mock config module
 mock_config = types.ModuleType("audio.config")
 mock_config.settings = types.SimpleNamespace(
+    # Core audio settings
     sample_rate=16000,
     chunk=1024,
-    vad_tty_status=False,      # ← ADD THIS
+    
+    # VAD settings - COMPLETE LIST
+    vad_tty_status=False,
     vad_floor_min=0.001,
     vad_floor_max=0.1,
-    vad_threshold_db=-40,      # ← ADD common VAD defaults
+    vad_threshold_db=-40,
     vad_hangover_ms=300,
     vad_min_speech_ms=100,
     vad_silence_ms=500,
+    vad_calibration_sec=3,          # ← ADD THIS
+    vad_log_transitions=False,      # ← ADD THIS
+    vad_min_amplitude=0.01,
+    vad_pre_speech_ms=100,
+    vad_noise_floor_multiplier=1.5,
+    vad_speech_threshold_multiplier=2.0,
+    vad_debug=False,
+    vad_show_meter=False,
+    vad_show_transitions=False,
+    
+    # Device settings
+    default_device_index=0,
+    fallback_device_index=None,
+    
+    # Recording settings
+    record_seconds=5,
+    amplify_factor=1.0,
+    
+    # WAV settings
+    wav_sample_rate=16000,
+    wav_sample_width=2,
+    wav_channels=1,
 )
 sys.modules["audio.config"] = mock_config
 
