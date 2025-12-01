@@ -1,3 +1,4 @@
+# tests/test_audio_components.py
 import io
 import sys
 import os
@@ -81,26 +82,42 @@ fake_mod.paFramesPerBufferUnspecified = 0
 # Patch sys.modules so audio.mic gets our fake
 sys.modules["pyaudio"] = fake_mod
 
-# Mock config.settings if it doesn't exist
-# First create a mock config module
+# Mock the config.settings module with ALL required attributes
 mock_config = types.ModuleType("audio.config")
-mock_config.settings = types.SimpleNamespace(
+mock_settings = types.SimpleNamespace(
     sample_rate=16000,
-    chunk=1024
+    chunk=1024,
+    vad_tty_status=False,
+    vad_threshold_db=-40,      # Common default
+    vad_hangover_ms=300,       # Common default  
+    vad_min_speech_ms=100,     # Common default
+    vad_silence_ms=500,        # Common default
+    vad_pre_speech_ms=100,     # Common default
+    vad_min_amplitude=0.01,    # Common default
 )
+mock_config.settings = mock_settings
 sys.modules["audio.config"] = mock_config
 
 # NOW import your audio modules
-try:
-    import audio.mic as mic
-    import audio.utils as utils
-    import audio.wav_io as wav_io
-    import audio.vad.detector as detector
-    import audio.vad.stream as stream
-    import audio.vad.utils as vad_utils
-except ImportError as e:
-    # If imports fail, skip all tests
-    pytest.skip(f"Audio modules not available: {e}", allow_module_level=True)
+import audio.mic as mic
+import audio.utils as utils
+import audio.wav_io as wav_io
+import audio.vad.detector as detector
+import audio.vad.stream as stream
+import audio.vad.utils as vad_utils
+
+# Patch any direct imports of cfg.settings in the modules
+# Check if modules import cfg directly
+if hasattr(mic, 'cfg'):
+    mic.cfg.settings = mock_settings
+if hasattr(utils, 'cfg'):
+    utils.cfg.settings = mock_settings
+if hasattr(detector, 'cfg'):
+    detector.cfg.settings = mock_settings
+if hasattr(stream, 'cfg'):
+    stream.cfg.settings = mock_settings
+if hasattr(vad_utils, 'cfg'):
+    vad_utils.cfg.settings = mock_settings
 
 # --- Remove the fixture or keep it as a no-op ---
 @pytest.fixture(autouse=True)
@@ -171,10 +188,6 @@ def test_list_input_devices_and_default():
 
 
 def test_set_and_get_selected_input_device():
-    # Patch cfg.settings inside the mic module if needed
-    if hasattr(mic, 'cfg'):
-        mic.cfg.settings = types.SimpleNamespace(sample_rate=16000, chunk=1024)
-    
     idx, name = mic.set_selected_input_device(0)
     got_idx, got_name = mic.get_selected_input_device()
     assert got_idx == idx
