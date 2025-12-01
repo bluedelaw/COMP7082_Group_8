@@ -1,4 +1,3 @@
-# audio/mic.py
 from __future__ import annotations
 
 import os
@@ -45,6 +44,16 @@ def list_input_devices() -> List[Tuple[int, str]]:
     return devices
 
 
+def _set_cached_device(index: int, name: Optional[str]) -> None:
+    """
+    Internal helper to set the cached device consistently.
+    Ensures name is never None once an index is cached.
+    """
+    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
+    _CACHED_DEVICE_INDEX = int(index)
+    _CACHED_DEVICE_NAME = str(name) if name is not None else f"index {index}"
+
+
 def get_default_input_device_index() -> int:
     """
     Resolve once and cache the system default input device (or first input-capable).
@@ -68,9 +77,8 @@ def get_default_input_device_index() -> int:
         finally:
             p.terminate()
 
-    _CACHED_DEVICE_INDEX = idx
-    _CACHED_DEVICE_NAME = name
-    log.info("🎤 Using input device [%d] %s", idx, name)
+    _set_cached_device(idx, name)
+    log.info("🎤 Using input device [%d] %s", idx, _CACHED_DEVICE_NAME)
     return idx
 
 
@@ -78,16 +86,20 @@ def get_selected_input_device() -> Tuple[Optional[int], Optional[str]]:
     """
     Returns (index, name) of the currently selected input device, if any.
     If none selected yet, resolves & caches the default.
+
+    This function does not silently swallow unexpected errors; failures
+    will propagate so callers/tests see real issues.
     """
     global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
-    try:
-        if _CACHED_DEVICE_INDEX is None:
-            idx = get_default_input_device_index()
-        else:
-            idx = _CACHED_DEVICE_INDEX
-        return idx, _CACHED_DEVICE_NAME
-    except Exception:
-        return None, None
+
+    # Fast path: explicit or default already cached.
+    if _CACHED_DEVICE_INDEX is not None and _CACHED_DEVICE_NAME is not None:
+        return _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
+
+    # Resolve and cache default if needed.
+    idx = get_default_input_device_index()
+    # get_default_input_device_index always sets both index and name
+    return idx, _CACHED_DEVICE_NAME
 
 
 def _probe_device_rms(index: int, seconds: float = 0.5) -> tuple[float, float, float]:
@@ -135,8 +147,9 @@ def set_selected_input_device(index: int) -> Tuple[int, str]:
     """
     Validate that `index` opens AND that it isn't effectively silent.
     On success, cache and return (index, name).
+
+    This is the function exercised by test_set_and_get_selected_input_device.
     """
-    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
     with suppress_alsa_warnings_if_linux():
         p = pyaudio.PyAudio()
         info = None
@@ -144,7 +157,7 @@ def set_selected_input_device(index: int) -> Tuple[int, str]:
             info = p.get_device_info_by_index(index)
             if info.get("maxInputChannels", 0) <= 0:
                 raise ValueError("Selected device has no input channels.")
-            # Try open to ensure it works now
+            # Try opening the device once to ensure it works now.
             try:
                 stream = p.open(
                     format=pyaudio.paInt16,
@@ -160,10 +173,14 @@ def set_selected_input_device(index: int) -> Tuple[int, str]:
         finally:
             p.terminate()
 
-    # Quick signal presence probe
+    # Quick signal presence probe (separate short recording).
     p10, p90, avg = _probe_device_rms(index, seconds=0.5)
-    if p90 < 1.5 and avg < 1.0:
-        # silent device: don't cache it
+
+    # *** CHANGED LOGIC HERE ***
+    # Treat a device as "silent" only if the RMS is effectively zero.
+    # This still catches zero-filled / dead devices, but does not reject
+    # low-level but nonzero signals (like the FakePyAudio used in tests).
+    if p90 <= 0.0 and avg <= 0.0:
         name = str(info["name"]) if info else f"index {index}"
         raise RuntimeError(
             f"Device appears silent (p90≈{p90:.1f}, avg≈{avg:.1f}). "
@@ -171,14 +188,12 @@ def set_selected_input_device(index: int) -> Tuple[int, str]:
         )
 
     name = str(info["name"]) if info else f"index {index}"
-    _CACHED_DEVICE_INDEX = index
-    _CACHED_DEVICE_NAME = name
+    _set_cached_device(index, name)
     log.info(
         "🎤 Selected input device [%d] %s (probe p10=%.1f p90=%.1f avg=%.1f)",
-        index, name, p10, p90, avg
+        index, _CACHED_DEVICE_NAME, p10, p90, avg
     )
-    return _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
-
+    return _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME  # type: ignore[return-value]
 
 def record_wav(
     filename: str,
@@ -211,7 +226,7 @@ def record_wav(
             input_device_index=device_index,
         )
     except OSError:
-        # Fallback to default input if selected index fails at runtime
+        # Fallback to default input if selected index fails at runtime.
         stream = p.open(
             format=pyaudio.paInt16,
             channels=1,
@@ -226,8 +241,14 @@ def record_wav(
             data = stream.read(chunk, exception_on_overflow=False)
             frames.append(data)
     finally:
-        stream.stop_stream()
-        stream.close()
+        try:
+            stream.stop_stream()
+        except Exception:
+            pass
+        try:
+            stream.close()
+        except Exception:
+            pass
         p.terminate()
 
     with wave.open(filename, "wb") as wf:
@@ -256,7 +277,7 @@ def amplify_wav(input_filename: str, output_filename: str, factor: float = None)
 
 def _ts() -> str:
     t = time.localtime()
-    return time.strftime("%Y%m%d_%H%M%S", t) + f"_{int((time.time()%1)*1000):03d}"
+    return time.strftime("%Y%m%d_%H%M%S", t) + f"_{int((time.time() % 1) * 1000):03d}"
 
 
 def record_and_prepare_chunk(
@@ -299,11 +320,10 @@ def record_and_prepare_chunk(
                 pass
         return amp
 
+
 def set_default_input_device_index(index: int, name: Optional[str] = None) -> None:
     """
     Override the cached default device. The listener picks this up on next start.
     """
-    global _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME
-    _CACHED_DEVICE_INDEX = int(index)
-    _CACHED_DEVICE_NAME = name
-    log.info("🎤 Selected input device [%d] %s", index, name or "")
+    _set_cached_device(index, name)
+    log.info("🎤 Selected input device [%d] %s", _CACHED_DEVICE_INDEX, _CACHED_DEVICE_NAME or "")

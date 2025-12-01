@@ -16,3 +16,6 @@ authors = [{ name = "Jarvin Team" }]
 [tool.setuptools.packages.find]
 include = ["backend", "audio", "ui", "memory"]
 exclude = ["scripts", "models", "temp"]
+
+[tool.setuptools]
+py-modules = ["config"]

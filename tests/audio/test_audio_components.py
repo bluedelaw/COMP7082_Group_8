@@ -192,13 +192,20 @@ class DummyMicStreamForVAD:
         self.sample_rate = sample_rate
         self.chunk = chunk
         self._count = 0
+        # hard cap to avoid infinite streaming in tests
+        self._max_frames = 50
 
     def open(self):
         pass
 
     def read_frame(self):
-        # Alternate between silence and a loud frame
+        # After a finite number of frames, simulate end-of-stream.
         self._count += 1
+        if self._count > self._max_frames:
+            # Let the VAD generator terminate gracefully
+            raise StopIteration
+
+        # Alternate between silence and a loud frame for the first few frames
         if self._count < 3:
             # low RMS silent frame
             return np.zeros(self.chunk, dtype=np.int16)
@@ -206,8 +213,7 @@ class DummyMicStreamForVAD:
             # loud frame
             return (np.ones(self.chunk, dtype=np.int16) * 3000)
         else:
-            # after a few frames, raise StopIteration by simulating stop requested via external
-            # we return silence afterwards
+            # afterwards, silence
             return np.zeros(self.chunk, dtype=np.int16)
 
     def stop(self):
@@ -215,7 +221,6 @@ class DummyMicStreamForVAD:
 
     def close(self):
         pass
-
 
 def test_vad_calibrate_and_utterances(monkeypatch):
     # Monkeypatch MicStream used in detector.NoiseGateVAD
