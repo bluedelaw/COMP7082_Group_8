@@ -10,12 +10,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Jarvin Team" }]
 
-# Intentionally not listing dependencies here to avoid diverging from requirements.txt.
-# Keep using `pip install -r requirements.txt` for runtime deps.
-
 [tool.setuptools.packages.find]
 include = ["backend", "audio", "ui", "memory"]
 exclude = ["scripts", "models", "temp"]
 
 [tool.setuptools]
 py-modules = ["config"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "asyncio: mark test as asyncio-based",
+]
