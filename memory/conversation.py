@@ -1,35 +1,51 @@
 # memory/conversation.py
 from __future__ import annotations
 
-import os
+from pathlib import Path
 import sqlite3
 import threading
 from typing import Any, Dict, List, Tuple, Optional
 
 import config as cfg
 
-# Thread-safe access for in-process usage
 _lock = threading.Lock()
-
-# One process-wide connection (SQLite is file-based; allow cross-threads)
 _conn: sqlite3.Connection | None = None
-
 
 def _connect() -> sqlite3.Connection:
     global _conn
     if _conn is not None:
         return _conn
-    db_path = cfg.settings.db_path  # ensures data dir exists
-    _conn = sqlite3.connect(db_path, check_same_thread=False)
+
+    settings = cfg.settings
+
+    # 1. Resolve db_path robustly
+    db_path = getattr(settings, "db_path", None)
+    if db_path is not None:
+        db_path = Path(db_path)
+    else:
+        data_dir = getattr(settings, "data_dir", None)
+        db_filename = getattr(settings, "db_filename", None)
+
+        if data_dir is None or db_filename is None:
+            raise RuntimeError(
+                "config.settings must provide either 'db_path' or both 'data_dir' and 'db_filename'."
+            )
+
+        data_dir = Path(data_dir)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        db_path = data_dir / db_filename
+
+    _conn = sqlite3.connect(str(db_path), check_same_thread=False)
     _conn.row_factory = sqlite3.Row
 
-    # Pragmas tuned for concurrent reads/writes & stability
+    # 2. Optional pragmas
     try:
-        if cfg.settings.db_wal:
+        if getattr(settings, "db_wal", False):
             _conn.execute("PRAGMA journal_mode=WAL;")
         _conn.execute("PRAGMA synchronous=NORMAL;")
         _conn.execute("PRAGMA foreign_keys=ON;")
     except Exception:
+        # Fail-soft on pragma tuning
         pass
 
     _migrate(_conn)
