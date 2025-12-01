@@ -17,33 +17,24 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install dependencies
+    - name: Install project in development mode
       run: |
         pip install --upgrade pip
-        # Read requirements, skip pyaudio if present
-        if [ -f requirements.txt ]; then
-          grep -v "pyaudio" requirements.txt > /tmp/requirements_no_pyaudio.txt || true
-          if [ -s /tmp/requirements_no_pyaudio.txt ]; then
-            pip install -r /tmp/requirements_no_pyaudio.txt
-          fi
-        fi
-
-    - name: Install project
-      run: python -m pip install -e . --no-deps
-
+        python -m pip install -e .
+        
     - name: Install test dependencies
       run: |
         pip install pytest numpy
-        # Optional: Install actual pyaudio if you want to test with real hardware
-        # pip install pyaudio
 
     - name: Run tests
       run: |
-        # Run all tests
         pytest tests/ -v
         
-    # Optional: Run only non-audio tests to ensure basic functionality
-    - name: Run non-audio tests (if audio tests fail)
+    # Optional: If tests fail, check what's installed
+    - name: Debug (if tests fail)
       if: failure()
       run: |
-        pytest tests/ -v -k "not audio" || echo "Some tests may have been skipped"
+        echo "=== Installed packages ==="
+        pip list
+        echo "=== Project structure ==="
+        find . -name "*.py" | grep -E "(audio|mic)" | head -20
