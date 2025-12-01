@@ -17,24 +17,34 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install project in development mode
+    - name: Install project with all dependencies
       run: |
         pip install --upgrade pip
-        python -m pip install -e .
+        # Check if requirements.txt exists
+        if [ -f requirements.txt ]; then
+          echo "Installing from requirements.txt"
+          pip install -r requirements.txt
+        else
+          echo "No requirements.txt found, installing common dependencies"
+          pip install numpy pytest
+        fi
         
-    - name: Install test dependencies
-      run: |
-        pip install pytest numpy
+        # Install the project in development mode
+        python -m pip install -e .
 
-    - name: Run tests
+    - name: Install missing test dependencies
+      run: |
+        # Install starlette for backend tests
+        pip install starlette
+        # Install pyttsx3 for TTS tests
+        pip install pyttsx3
+        # Install anyio for async tests
+        pip install anyio
+
+    - name: Run audio tests only
+      run: |
+        pytest tests/audio/ -v
+        
+    - name: Run all tests (including backend)
       run: |
         pytest tests/ -v
-        
-    # Optional: If tests fail, check what's installed
-    - name: Debug (if tests fail)
-      if: failure()
-      run: |
-        echo "=== Installed packages ==="
-        pip list
-        echo "=== Project structure ==="
-        find . -name "*.py" | grep -E "(audio|mic)" | head -20
